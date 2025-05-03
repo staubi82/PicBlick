@@ -1,0 +1,265 @@
+/* Moderner Header-Stil */
+header {
+    background-color: var(--primary-color, #4a6da7);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+header .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 1rem;
+}
+
+header h1 {
+    font-size: 1.5rem;
+    margin: 0;
+    color: white;
+    font-weight: 600;
+}
+
+header h1 a {
+    color: white;
+    text-decoration: none;
+}
+
+header .logo-container {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.logo-icon {
+    width: 32px;
+    height: 32px;
+    fill: white;
+}
+
+/* Navigation */
+header nav {
+    display: flex;
+    align-items: center;
+}
+
+header nav ul {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: flex-end;
+    width: 100%;
+}
+
+header nav li {
+    position: relative;
+    margin: 0;
+}
+
+/* Logout-Button ganz rechts */
+header nav li.logout-item {
+    margin-left: 0.75rem;
+}
+
+header nav li.logout-item a {
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+header nav li.logout-item a:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+header nav li.logout-item .nav-icon {
+    width: 20px;
+    height: 20px;
+}
+
+header nav a {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    font-weight: 500;
+    gap: 0.5rem;
+}
+
+header nav a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+header nav a.active {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: white;
+    font-weight: 600;
+}
+
+/* Dropdown-Menü */
+.dropdown {
+    position: relative;
+}
+
+.dropdown-toggle {
+    cursor: pointer;
+    padding-right: 1.5rem !important;
+}
+
+.dropdown-toggle::after {
+    content: "";
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid rgba(255, 255, 255, 0.8);
+    transition: transform 0.2s ease;
+}
+
+.dropdown:hover .dropdown-toggle::after {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background-color: white;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 180px;
+    display: none;
+    z-index: 1000;
+    margin-top: 0.25rem;
+    padding: 0.5rem 0;
+    overflow: hidden;
+}
+
+.dropdown:hover .dropdown-menu {
+    display: block;
+}
+
+.dropdown-menu li {
+    width: 100%;
+}
+
+.dropdown-menu a {
+    color: var(--primary-text, #333);
+    padding: 0.75rem 1rem;
+    display: block;
+    border-radius: 0;
+}
+
+.dropdown-menu a:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: var(--primary-color, #4a6da7);
+}
+
+.dropdown-menu a.active {
+    background-color: rgba(74, 109, 167, 0.1);
+    color: var(--primary-color, #4a6da7);
+    font-weight: 600;
+}
+
+/* Profilbild in der Navigation */
+.nav-profile-img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+}
+
+.nav-profile-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.nav-username {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .nav-username {
+        display: none;
+    }
+    
+    .nav-profile-img {
+        margin-right: 0;
+    }
+}
+
+/* Icon-Stile */
+.nav-icon {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    header .container {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    header nav {
+        width: 100%;
+        overflow-x: auto;
+        padding: 0.5rem 0;
+    }
+    
+    header nav ul {
+        flex-wrap: nowrap;
+        width: 100%;
+    }
+}
+
+/* Dunkelmodus Anpassungen */
+@media (prefers-color-scheme: dark) {
+    header {
+        background-color: var(--primary-color-dark, #2c4167);
+    }
+    
+    .dropdown-menu {
+        background-color: #2d2d2d;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    
+    .dropdown-menu a {
+        color: #e0e0e0;
+    }
+    
+    .dropdown-menu a:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+        color: #c0c0c0;
+    }
+    
+    .dropdown-menu a.active {
+        background-color: rgba(255, 255, 255, 0.08);
+        color: white;
+    }
+}

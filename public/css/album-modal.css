@@ -1,0 +1,112 @@
+/* Album-Editor-Modal zusätzliche Styles */
+
+/* Album-Titel-Container und Menü-Button */
+.album-title-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 0.5rem;
+    max-width: 100%;
+    position: relative;
+}
+
+.album-title-container h2 {
+    margin: 0;
+    flex-grow: 1;
+    padding-right: 45px; /* Platz für den Menü-Button */
+}
+
+/* Drei-Punkte-Menü Button */
+.btn-menu-dots {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: all 0.2s ease;
+    position: absolute;
+    right: 0;
+    top: 12px;
+    z-index: 100;
+}
+
+/* Positionierung der Sektions-Header für Menü-Button */
+.section-header {
+    position: relative;
+    padding-right: 10px;
+}
+
+.btn-menu-dots:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.btn-menu-dots:active {
+    transform: scale(0.92);
+}
+
+.btn-menu-dots svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Modal-Open Body Zustand */
+body.modal-open {
+    overflow: hidden;
+}
+
+/* Cover-Selection-Info */
+.cover-selection-info {
+    display: none;
+    margin-bottom: 15px;
+    padding: 12px 15px;
+    background-color: rgba(98, 0, 238, 0.1);
+    border-radius: 6px;
+    border-left: 3px solid var(--accent-primary);
+}
+
+.cover-selection-info p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+}
+
+/* Übergangs-Animation für Titelbild-Auswahl */
+.cover-thumbnail {
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.cover-thumbnail:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+    border-color: rgba(98, 0, 238, 0.5);
+}
+
+/* Responsive Anpassungen für kleinere Bildschirme */
+@media (max-width: 768px) {
+    .modal-content {
+        width: 95%;
+        margin: 1rem auto;
+    }
+    
+    .cover-thumbnails {
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        max-height: 200px;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .btn-primary, 
+    .btn-secondary,
+    .btn-danger {
+        width: 100%;
+    }
+}

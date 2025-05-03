@@ -1,0 +1,39 @@
+# Datenbank-Dateien
+*.db
+*.sqlite
+*.sqlite3
+
+# Benutzerdateien & Uploads
+storage/users/*
+storage/thumbs/*
+storage/trash/*
+!storage/users/.gitkeep
+!storage/thumbs/.gitkeep
+!storage/trash/users/.gitkeep
+!storage/trash/content/.gitkeep
+
+# Konfigurationsdateien mit sensiblen Daten
+app/config.php
+
+# Temporäre Dateien
+*.log
+*.tmp
+*.bak
+*.swp
+
+# IDE & Systemdateien
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.sublime-*
+*.phpintel
+*.phpcomplete_extended
+
+# Composer
+vendor/
+composer.lock
+
+# PHP-Fehlerprotokolle
+php_errors.log
+error_log
