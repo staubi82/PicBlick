@@ -45,6 +45,89 @@ if (!$album || (!$album['is_public'] && (!$userId || $album['user_id'] != $userI
 // Album-Besitzer
 $isOwner = $userId && $album['user_id'] == $userId;
 
+// Prüfen, ob die parent_album_id-Spalte bereits existiert
+$hasParentColumn = false;
+try {
+    $columns = $db->fetchAll(
+        "PRAGMA table_info(albums)",
+        []
+    );
+    
+    foreach ($columns as $col) {
+        if ($col['name'] === 'parent_album_id') {
+            $hasParentColumn = true;
+            break;
+        }
+    }
+} catch (Exception $e) {
+    // Spalte existiert nicht, ignorieren
+}
+
+// Unteralben abrufen, falls die Spalte vorhanden ist
+$subAlbums = [];
+if ($hasParentColumn) {
+    $subAlbums = $db->fetchAll(
+        "SELECT a.*, i.filename as cover_filename
+         FROM albums a
+         LEFT JOIN images i ON a.cover_image_id = i.id
+         WHERE a.parent_album_id = :album_id
+         AND a.deleted_at IS NULL
+         ORDER BY a.name ASC",
+        ['album_id' => $albumId]
+    );
+}
+
+// Zähle Bilder in Unteralben
+foreach ($subAlbums as &$subAlbum) {
+    $imageCount = $db->fetchValue(
+        "SELECT COUNT(*) FROM images WHERE album_id = :album_id AND deleted_at IS NULL",
+        ['album_id' => $subAlbum['id']]
+    );
+    $subAlbum['image_count'] = $imageCount;
+    
+    // Cover-Bild verwenden, wenn vorhanden, sonst zufälliges Bild
+    if (!empty($subAlbum['cover_filename'])) {
+        // Cover-Bild aus der Datenbank verwenden
+        $cleanPath = rtrim($subAlbum['path'], '/');
+        $filename = basename($subAlbum['cover_filename']);
+        
+        $thumbnailPath = THUMBS_PATH . '/' . $cleanPath . '/' . $filename;
+        
+        // Prüfen, ob Thumbnail existiert
+        if (file_exists($thumbnailPath)) {
+            $subAlbum['thumbnail'] = '../storage/thumbs/' . $cleanPath . '/' . $filename;
+        } else {
+            $subAlbum['thumbnail'] = 'img/default-album.jpg';
+        }
+    } else {
+        // Kein Cover-Bild vorhanden - zufälliges Bild auswählen
+        $randomImage = $db->fetchOne(
+            "SELECT filename FROM images WHERE album_id = :album_id AND deleted_at IS NULL ORDER BY RANDOM() LIMIT 1",
+            ['album_id' => $subAlbum['id']]
+        );
+        
+        if ($randomImage) {
+            // Pfad bereinigen (Schrägstriche am Ende entfernen)
+            $cleanPath = rtrim($subAlbum['path'], '/');
+            
+            // Prüfen ob es sich um einen vollständigen Pfad handelt
+            $filename = basename($randomImage['filename']);
+            
+            $thumbnailPath = THUMBS_PATH . '/' . $cleanPath . '/' . $filename;
+            
+            // Prüfen, ob Thumbnail existiert
+            if (file_exists($thumbnailPath)) {
+                $subAlbum['thumbnail'] = '../storage/thumbs/' . $cleanPath . '/' . $filename;
+            } else {
+                $subAlbum['thumbnail'] = 'img/default-album.jpg';
+            }
+        } else {
+            $subAlbum['thumbnail'] = 'img/default-album.jpg';
+        }
+    }
+}
+unset($subAlbum); // Referenz nach foreach-Schleife aufheben
+
 // Bilder abrufen
 $images = $db->fetchAll(
     "SELECT i.*,
@@ -90,6 +173,16 @@ $owner = $db->fetchOne(
         <div class="container">
             <section>
                 <div class="section-header">
+                    <?php if (false): // "Zurück"-Link in Unterkategorien entfernen ?>
+                    <?php
+                    // Übergeordnetes Album für die Titelzeile abrufen
+                    //$parentAlbum = $db->fetchOne(
+                    //    "SELECT id, name FROM albums WHERE id = :id",
+                    //    ['id' => $album['parent_album_id']]
+                    //);
+                    ?>
+                    <!-- "Zurück"-Link entfernt -->
+                    <?php endif; ?>
                     <?php if ($isOwner): ?>
                     <button id="edit-album-toggle" class="btn-menu-dots" aria-label="Album bearbeiten" title="Album bearbeiten">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -106,23 +199,48 @@ $owner = $db->fetchOne(
                                      alt="Album-Titelbild">
                             </div>
                         <?php endif; ?>
-                        <div class="album-info">
-                            <h2 id="album-title" data-editable="false" class="it-style-title">
-                                <?php echo htmlspecialchars($album['name']); ?>
-                                <?php if ($album['is_public']): ?>
-                                    <span class="public-badge">Öffentlich</span>
-                                <?php endif; ?>
-                            </h2>
-                            <p id="album-description" data-editable="false"><?php echo htmlspecialchars($album['description'] ?? 'Keine Beschreibung'); ?></p>
-                            <p>Erstellt von <strong><?php echo htmlspecialchars($owner['username']); ?></strong> am <?php echo isset($album['created_at']) ? date('d.m.Y', strtotime($album['created_at'])) : '01.01.2003'; ?></p>
-                            <!-- Versteckte Input-Felder für die ursprünglichen Werte -->
-                            <input type="hidden" id="original-album-title" value="<?php echo htmlspecialchars($album['name']); ?>">
-                            <input type="hidden" id="original-album-description" value="<?php echo htmlspecialchars($album['description'] ?? ''); ?>">
+                        <div class="album-info-container">
+                            <div class="album-info">
+                                <h2 id="album-title" data-editable="false" class="it-style-title">
+                                    <?php if (isset($parentAlbum)): ?>
+                                    <a href="album.php?id=<?php echo $parentAlbum['id']; ?>" class="parent-album-link"><?php echo htmlspecialchars($parentAlbum['name']); ?></a>
+                                    <span class="album-separator">›</span>
+                                    <?php endif; ?>
+                                    <?php echo htmlspecialchars($album['name']); ?>
+                                    <?php if ($album['is_public']): ?>
+                                        <span class="public-badge">Öffentlich</span>
+                                    <?php endif; ?>
+                                </h2>
+                                <p id="album-description" data-editable="false"><?php echo htmlspecialchars($album['description'] ?? 'Keine Beschreibung'); ?></p>
+                                <p class="created-info">Erstellt von <strong><?php echo htmlspecialchars($owner['username']); ?></strong> am <?php echo isset($album['created_at']) ? date('d.m.Y', strtotime($album['created_at'])) : '01.01.2003'; ?></p>
+                                <!-- Versteckte Input-Felder für die ursprünglichen Werte -->
+                                <input type="hidden" id="original-album-title" value="<?php echo htmlspecialchars($album['name']); ?>">
+                                <input type="hidden" id="original-album-description" value="<?php echo htmlspecialchars($album['description'] ?? ''); ?>">
+                            </div>
+                            
+                            <?php if ($hasParentColumn && !empty($subAlbums)): ?>
+                            <div class="subalbums-swiper">
+                                <div class="swiper-wrapper">
+                                    <?php foreach ($subAlbums as $subAlbum): ?>
+                                        <div class="swiper-slide">
+                                            <a href="album.php?id=<?php echo $subAlbum['id']; ?>" class="subalbum-card">
+                                                <div class="subalbum-image-container">
+                                                    <img src="<?php echo htmlspecialchars($subAlbum['thumbnail']); ?>" alt="<?php echo htmlspecialchars($subAlbum['name']); ?>">
+                                                    <div class="subalbum-title-overlay"><?php echo htmlspecialchars($subAlbum['name']); ?></div>
+                                                </div>
+                                            </a>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                                <div class="swiper-pagination"></div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
 
-                <!-- Horizontale Trennlinie zwischen Titel und Bildern -->
+
+                <!-- Horizontale Trennlinie zwischen Titel und Inhalten -->
                 <hr class="album-divider">
 
                 <!-- Album-Editor-Modal (per Default ausgeblendet) -->
@@ -157,6 +275,27 @@ $owner = $db->fetchOne(
                                     </label>
                                     <textarea id="edit-album-description" rows="3"><?php echo htmlspecialchars($album['description'] ?? ''); ?></textarea>
                                 </div>
+
+                                <?php if ($hasParentColumn && isset($album['parent_album_id']) && $album['parent_album_id']): ?>
+                                <!-- Information über übergeordnetes Album, wenn dieses Album ein Unteralbum ist -->
+                                <div class="form-group">
+                                    <label>
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                                        </svg>
+                                        Übergeordnetes Album
+                                    </label>
+                                    <div class="static-field">
+                                        <?php
+                                        $parentName = $db->fetchValue(
+                                            "SELECT name FROM albums WHERE id = :id",
+                                            ['id' => $album['parent_album_id']]
+                                        );
+                                        echo htmlspecialchars($parentName);
+                                        ?>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
                                 
                                 <div class="form-group">
                                     <label for="edit-album-public" class="toggle-label">
@@ -262,14 +401,21 @@ $owner = $db->fetchOne(
                     </div>
                 </div>
 
+
                 <?php if (empty($images)): ?>
                     <div class="empty-state">
                         <p>Dieses Album enthält noch keine Bilder.</p>
                     </div>
                 <?php else: ?>
+                    <!-- Wenn das Album nicht leer ist -->
                     <div class="cover-selection-info" id="cover-selection-info">
                         <p>Wählen Sie ein Bild als neues Titelbild für dieses Album.</p>
                     </div>
+
+                    <!-- Unteralben werden jetzt in der Titelleiste angezeigt -->
+
+                    <!-- Bilder anzeigen, falls vorhanden -->
+                    <?php if (!empty($images)): ?>
                     <div class="image-grid" id="album-edit-grid" data-edit-mode="false" data-cover-selection-mode="false">
                         <?php foreach ($images as $image): ?>
                             <?php
@@ -335,6 +481,7 @@ $owner = $db->fetchOne(
                             </div>
                         <?php endforeach; ?>
                     </div>
+                    <?php endif; ?>
                 <?php endif; ?>
             </section>
         </div>
@@ -380,6 +527,167 @@ $owner = $db->fetchOne(
         font-weight: 500;
         text-transform: uppercase;
     }
+    
+    /* Breadcrumb-Navigation */
+    .breadcrumb {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        font-size: 0.9em;
+        flex-wrap: wrap;
+    }
+    
+    .breadcrumb a {
+        color: var(--accent-primary);
+        text-decoration: none;
+    }
+    
+    .breadcrumb a:hover {
+        text-decoration: underline;
+    }
+    
+    .breadcrumb .separator {
+        margin: 0 8px;
+        color: var(--text-muted);
+    }
+    
+    /* Action Buttons */
+    .action-buttons {
+        margin: 20px 0;
+        display: flex;
+        gap: 10px;
+    }
+    
+    .static-field {
+        background-color: rgba(255, 255, 255, 0.1);
+        padding: 8px 12px;
+        border-radius: var(--border-radius);
+        color: var(--text-muted);
+    }
+    
+    /* Neues Layout für Album-Info und Unteralben */
+    .album-info-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .album-info {
+        flex: 1;
+        min-width: 250px;
+    }
+    
+ /* Anpassungen für die Unteralben-Darstellung */
+/* Anpassungen für die Unteralben-Darstellung */
+.subalbums-swiper {
+    flex: 1;
+    max-width: 50%;
+    /* Ändern von overflow-x: auto zu visible, damit der Hover-Effekt nicht abgeschnitten wird */
+    overflow: visible;
+    white-space: nowrap;
+    padding: 8px 0;
+    position: relative;
+    display: flex;
+    align-items: center; /* Vertikale Zentrierung der Elemente */
+}
+
+.swiper-wrapper {
+    display: flex;
+    gap: 10px;
+    /* Sicherstellen, dass auch hier overflow visible ist */
+    overflow: visible;
+    align-items: center; /* Vertikale Zentrierung */
+    height: 100%; /* Volle Höhe ausnutzen */
+}
+
+.swiper-slide {
+    flex: 0 0 auto;
+    width: 150px;
+    overflow: visible;
+    /* Platz für den Hover-Effekt lassen */
+    padding: 5px;
+    margin: 5px 0;
+    display: flex;
+    align-items: center;
+}
+
+.subalbum-card {
+    display: block;
+    text-decoration: none;
+    color: var(--text-color);
+    border-radius: var(--border-radius);
+    overflow: visible;
+    transition: transform 0.2s, box-shadow 0.2s;
+    /* Positionierung für Hover-Effekt */
+    position: relative;
+    z-index: 1;
+}
+
+.subalbum-card:hover {
+    transform: scale(1.05);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.subalbum-image-container {
+    position: relative;
+    width: 100%;
+    height: 100px;
+    border-radius: 8px; /* Explizite Rundung für die Ecken */
+    overflow: hidden; /* Wichtig, um sicherzustellen, dass Bilder innerhalb der abgerundeten Ecken bleiben */
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.subalbum-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px; /* Runde Ecken auch für das Bild */
+    transition: transform 0.3s ease;
+}
+
+.subalbum-card:hover img {
+    transform: scale(1.03); /* Leichte Animation des Bildes selbst beim Hover */
+}
+
+.subalbum-title-overlay {
+    position: absolute;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 8px;
+    font-size: 0.9em;
+    font-weight: bold;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    text-align: center;
+    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+    border-bottom-left-radius: 8px; /* Rundung nur unten */
+    border-bottom-right-radius: 8px;
+}
+
+/* Anpassungen für mobile Ansicht */
+@media (max-width: 768px) {
+    .subalbums-swiper {
+        max-width: 100%;
+        margin-top: 10px;
+        overflow-x: auto; /* Auf mobilen Geräten wieder scrollbar machen */
+        padding-bottom: 15px; /* Platz für Scrollbar */
+    }
+    
+    .swiper-slide {
+        width: 130px; /* Etwas kleiner auf mobilen Geräten */
+    }
+}
 </style>
 
 <script src="/public/js/main.js"></script>

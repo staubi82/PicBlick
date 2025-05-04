@@ -25,6 +25,53 @@ $currentUser = $auth->getCurrentUser();
 $error = '';
 $success = '';
 
+// Datenbank initialisieren
+$db = Database::getInstance();
+
+// Prüfen, ob die parent_album_id-Spalte bereits existiert
+$hasParentColumn = false;
+try {
+    $columns = $db->fetchAll(
+        "PRAGMA table_info(albums)",
+        []
+    );
+    
+    foreach ($columns as $col) {
+        if ($col['name'] === 'parent_album_id') {
+            $hasParentColumn = true;
+            break;
+        }
+    }
+} catch (Exception $e) {
+    // Spalte existiert nicht, ignorieren
+}
+
+// Prüfen, ob ein übergeordnetes Album-ID übergeben wurde (für Unteralbum)
+$parentId = isset($_GET['parent_id']) ? (int)$_GET['parent_id'] : 0;
+$parentAlbum = null;
+
+// Wenn ein übergeordnetes Album angegeben ist und die Spalte existiert, prüfen ob es existiert
+if ($hasParentColumn && $parentId > 0) {
+    // Übergeordnetes Album abrufen
+    $parentAlbum = $db->fetchOne(
+        "SELECT * FROM albums WHERE id = :id AND deleted_at IS NULL",
+        ['id' => $parentId]
+    );
+    
+    // Prüfen, ob übergeordnetes Album existiert und Benutzer Zugriffsrechte hat
+    if (!$parentAlbum || $parentAlbum['user_id'] != $currentUser['id']) {
+        $error = 'Das übergeordnete Album existiert nicht oder Sie haben keine Zugriffsrechte.';
+        $parentAlbum = null;
+        $parentId = 0;
+    }
+} else if (!$hasParentColumn && $parentId > 0) {
+    // Wenn die Spalte nicht existiert, aber ein parent_id Parameter übergeben wurde,
+    // ignorieren wir diesen und erstellen ein normales Album
+    $error = 'Die Unteralben-Funktion ist noch nicht aktiviert. Bitte führen Sie zuerst die Setup-Datei aus.';
+    $parentAlbum = null;
+    $parentId = 0;
+}
+
 // Formular wurde abgeschickt
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $albumName = trim($_POST['album_name'] ?? '');
@@ -53,13 +100,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $albumPath = 'user_' . $currentUser['id'] . '/' . preg_replace('/[^a-z0-9_-]/i', '_', strtolower($albumName)) . '_' . uniqid();
             
             // Album in die Datenbank einfügen
-            $albumId = $db->insert('albums', [
+            $albumData = [
                 'name' => $albumName,
                 'user_id' => $currentUser['id'],
                 'path' => $albumPath,
                 'is_public' => $isPublic,
                 'description' => trim($_POST['album_description'] ?? '')
-            ]);
+            ];
+            
+            // Wenn es ein Unteralbum ist und die Spalte existiert, parent_album_id hinzufügen
+            if ($hasParentColumn && $parentId > 0) {
+                $albumData['parent_album_id'] = $parentId;
+                
+                // Wenn das übergeordnete Album privat ist, muss das Unteralbum auch privat sein
+                if (!$parentAlbum['is_public']) {
+                    $albumData['is_public'] = 0;
+                }
+            }
+            
+            $albumId = $db->insert('albums', $albumData);
             
             if ($albumId) {
                 // Verzeichnis für das Album erstellen
@@ -98,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neues Album - Fotogalerie</title>
+    <title><?php echo $parentAlbum ? 'Neues Unteralbum - ' . htmlspecialchars($parentAlbum['name']) : 'Neues Album'; ?> - Fotogalerie</title>
     <link rel="stylesheet" href="/public/css/style.css">
 </head>
 <body>
@@ -126,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="container">
             <section>
                 <div class="form-container">
-                    <h2>Neues Album erstellen</h2>
+                    <h2><?php echo $parentAlbum ? 'Neues Unteralbum in "' . htmlspecialchars($parentAlbum['name']) . '" erstellen' : 'Neues Album erstellen'; ?></h2>
                     
                     <?php if (!empty($error)): ?>
                         <div class="alert alert-error">
@@ -141,8 +200,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php endif; ?>
                     
                     <form method="post" action="">
+                       <?php if ($hasParentColumn && $parentAlbum): ?>
                        <div class="form-group">
-                           <label for="album_name">Album-Name</label>
+                           <label>Übergeordnetes Album</label>
+                           <div class="static-field"><?php echo htmlspecialchars($parentAlbum['name']); ?></div>
+                           <input type="hidden" name="parent_id" value="<?php echo $parentId; ?>">
+                       </div>
+                       <?php endif; ?>
+
+                       <div class="form-group">
+                           <label for="album_name"><?php echo ($hasParentColumn && $parentAlbum) ? 'Unteralbum-Name' : 'Album-Name'; ?></label>
                            <input type="text" id="album_name" name="album_name" required autofocus>
                        </div>
                        
@@ -152,13 +219,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                        </div>
                        
                        <div class="form-group checkbox-group">
-                           <input type="checkbox" id="is_public" name="is_public">
+                           <input type="checkbox" id="is_public" name="is_public" <?php echo ($hasParentColumn && $parentAlbum && !$parentAlbum['is_public']) ? 'disabled' : ''; ?>>
                            <label for="is_public">Öffentlich (für alle sichtbar)</label>
+                           <?php if ($hasParentColumn && $parentAlbum && !$parentAlbum['is_public']): ?>
+                           <p class="hint">Das übergeordnete Album ist privat, daher muss dieses Unteralbum ebenfalls privat sein.</p>
+                           <?php endif; ?>
                        </div>
                        
                        <div class="form-actions">
-                           <button type="submit" class="btn btn-primary">Album erstellen</button>
+                           <button type="submit" class="btn btn-primary"><?php echo ($hasParentColumn && $parentAlbum) ? 'Unteralbum erstellen' : 'Album erstellen'; ?></button>
+                           <?php if ($hasParentColumn && $parentAlbum): ?>
+                           <a href="/public/album.php?id=<?php echo $parentId; ?>" class="btn">Abbrechen</a>
+                           <?php else: ?>
                            <a href="/public/index.php" class="btn">Abbrechen</a>
+                           <?php endif; ?>
                        </div>
                    </form>
                 </div>
@@ -175,3 +249,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script src="/public/js/main.js"></script>
 </body>
 </html>
+
+<style>
+.static-field {
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 8px 12px;
+    border-radius: 4px;
+    color: #ccc;
+    margin-bottom: 10px;
+}
+
+.hint {
+    font-size: 0.9em;
+    color: #999;
+    margin-top: 5px;
+}
+</style>

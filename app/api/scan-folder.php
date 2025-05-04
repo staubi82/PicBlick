@@ -50,11 +50,17 @@ $existingImages = $db->fetchAll(
     ['album_id' => $albumId]
 );
 
-// Filtern der Dateien, um nur unterstützte Bildformate zu haben
+// Filtern der Dateien, um nur unterstützte Bildformate zu haben und Unterordner zu identifizieren
 $imageFiles = [];
+$subFolders = [];
+
 foreach ($files as $file) {
     $type = $file['type'] ?? '';
-    if (in_array($type, ['image/jpeg', 'image/png', 'image/gif'])) {
+    if ($type === 'directory') {
+        // Es ist ein Unterordner
+        $subFolders[] = $file;
+    } else if (in_array($type, ['image/jpeg', 'image/png', 'image/gif'])) {
+        // Es ist ein Bild
         $imageFiles[] = $file;
     }
 }
@@ -137,6 +143,27 @@ if ($syncDeletions) {
     }
 }
 
+// Prüfen, ob Unterordner im System bereits als Unteralben existieren
+$subFolderInfo = [];
+foreach ($subFolders as $folder) {
+    $folderName = basename($folder['path']);
+    $folderPath = $folder['path'];
+    
+    // Suche nach einem existierenden Unteralbum mit diesem Namen
+    $subAlbum = $db->fetchOne(
+        'SELECT * FROM albums WHERE parent_album_id = :parent_id AND name = :name AND deleted_at IS NULL',
+        ['parent_id' => $albumId, 'name' => $folderName]
+    );
+    
+    $subFolderInfo[] = [
+        'name' => $folderName,
+        'path' => $folderPath,
+        'exists' => !empty($subAlbum),
+        'id' => $subAlbum ? $subAlbum['id'] : null,
+        'album_path' => $subAlbum ? $subAlbum['path'] : null
+    ];
+}
+
 // Rückgabe der Ergebnisse
 echo json_encode([
     'album' => [
@@ -148,7 +175,9 @@ echo json_encode([
     'new_files' => $newFiles,
     'existing_files' => $existingFiles,
     'deleted_files' => $deletedFiles,
+    'sub_folders' => $subFolderInfo,
     'total_new' => count($newFiles),
     'total_existing' => count($existingFiles),
-    'total_deleted' => count($deletedFiles)
+    'total_deleted' => count($deletedFiles),
+    'total_sub_folders' => count($subFolderInfo)
 ]);

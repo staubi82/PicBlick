@@ -12,17 +12,16 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Alben-Tabelle
 CREATE TABLE IF NOT EXISTS albums (
-    user_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    UNIQUE(user_id, name),
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     user_id INTEGER NOT NULL,
     path TEXT NOT NULL,
+    description TEXT DEFAULT NULL,
     is_public INTEGER DEFAULT 0,  -- 0 = privat, 1 = öffentlich
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME DEFAULT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE(user_id, name)
 );
 
 -- Bilder-Tabelle

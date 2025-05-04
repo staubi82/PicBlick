@@ -28,15 +28,52 @@ $db = Database::getInstance();
 // Alben abrufen (unterschiedliche Abfragen je nach Login-Status)
 if ($currentUser) {
     // Nur eigene Alben für eingeloggte Benutzer
-    $albums = $db->fetchAll(
-        "SELECT a.*, i.filename as cover_filename
-         FROM albums a
-         LEFT JOIN images i ON a.cover_image_id = i.id
-         WHERE a.user_id = :user_id
-         AND a.deleted_at IS NULL
-         ORDER BY a.id DESC",
-        ['user_id' => $currentUser['id']]
-    );
+    // Prüfen, ob die parent_album_id-Spalte bereits existiert
+    $hasParentColumn = false;
+    try {
+        $colCheck = $db->fetchOne(
+            "PRAGMA table_info(albums)",
+            []
+        );
+        
+        $columns = $db->fetchAll(
+            "PRAGMA table_info(albums)",
+            []
+        );
+        
+        foreach ($columns as $col) {
+            if ($col['name'] === 'parent_album_id') {
+                $hasParentColumn = true;
+                break;
+            }
+        }
+    } catch (Exception $e) {
+        // Spalte existiert nicht, ignorieren
+    }
+    
+    // SQL-Abfrage basierend auf vorhandenen Spalten anpassen
+    if ($hasParentColumn) {
+        $albums = $db->fetchAll(
+            "SELECT a.*, i.filename as cover_filename
+             FROM albums a
+             LEFT JOIN images i ON a.cover_image_id = i.id
+             WHERE a.user_id = :user_id
+             AND a.deleted_at IS NULL
+             AND a.parent_album_id IS NULL
+             ORDER BY a.id DESC",
+            ['user_id' => $currentUser['id']]
+        );
+    } else {
+        $albums = $db->fetchAll(
+            "SELECT a.*, i.filename as cover_filename
+             FROM albums a
+             LEFT JOIN images i ON a.cover_image_id = i.id
+             WHERE a.user_id = :user_id
+             AND a.deleted_at IS NULL
+             ORDER BY a.id DESC",
+            ['user_id' => $currentUser['id']]
+        );
+    }
     
     // Statistikdaten abrufen
     $totalAlbums = $db->fetchValue(

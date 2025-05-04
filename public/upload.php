@@ -867,6 +867,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['images'])) {
                                 </div>
                                 
                                 <div class="form-group checkbox-group">
+                                    <input type="checkbox" id="import_subfolders" name="import_subfolders" checked />
+                                    <label for="import_subfolders">Unterordner als Unteralben importieren</label>
+                                </div>
+                                
+                                <div class="form-group checkbox-group">
                                     <input type="checkbox" id="scan_make_public" name="scan_make_public" />
                                     <label for="scan_make_public">Bilder öffentlich sichtbar machen</label>
                                 </div>
@@ -1230,10 +1235,48 @@ document.addEventListener('DOMContentLoaded', () => {
             const existingCount = data.existing_files ? data.existing_files.length : 0;
             const deletedCount = data.deleted_files ? data.deleted_files.length : 0;
             
-            scanSummary.textContent = `${newCount} neue, ${existingCount} vorhandene, ${deletedCount} gelöschte Dateien`;
+            const subFoldersCount = data.sub_folders ? data.sub_folders.length : 0;
+            
+            scanSummary.textContent = `${newCount} neue, ${existingCount} vorhandene, ${deletedCount} gelöschte Dateien, ${subFoldersCount} Unterordner`;
+            
+            // Unterordner anzeigen
+            if (data.sub_folders && data.sub_folders.length > 0) {
+                const subFoldersTitle = document.createElement('h4');
+                subFoldersTitle.textContent = 'Gefundene Unterordner';
+                subFoldersTitle.style.marginTop = '20px';
+                subFoldersTitle.style.marginBottom = '10px';
+                scanResultsList.appendChild(subFoldersTitle);
+                
+                data.sub_folders.forEach(folder => {
+                    const item = document.createElement('div');
+                    item.className = 'scan-result-item';
+                    const statusText = folder.exists ? 'Vorhanden' : 'Neu';
+                    const statusClass = folder.exists ? 'synced' : 'new';
+                    
+                    item.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="min-width: 40px; margin-right: 15px;">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        <span><strong>Unterordner:</strong> ${folder.name}</span>
+                        <span class="status ${statusClass}">${statusText}</span>
+                    `;
+                    scanResultsList.appendChild(item);
+                });
+                
+                const separator = document.createElement('hr');
+                separator.style.margin = '20px 0';
+                separator.style.border = 'none';
+                separator.style.borderTop = '1px solid var(--border)';
+                scanResultsList.appendChild(separator);
+            }
             
             // Neue Dateien
             if (data.new_files && data.new_files.length > 0) {
+                const filesTitle = document.createElement('h4');
+                filesTitle.textContent = 'Gefundene Dateien';
+                filesTitle.style.marginTop = '20px';
+                filesTitle.style.marginBottom = '10px';
+                scanResultsList.appendChild(filesTitle);
                 data.new_files.forEach(file => {
                     const item = document.createElement('div');
                     item.className = 'scan-result-item';
@@ -1317,7 +1360,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 album_id: albumId,
                 scan_data: scanData,
                 sync_deletions: syncDeletions,
-                make_public: makePublic
+                make_public: makePublic,
+                import_subfolders: document.getElementById('import_subfolders').checked
             })
         })
         .then(response => response.json())

@@ -43,12 +43,47 @@ function monitorUserFolders($db) {
     }
 
     // Funktion: Importiert Bilder aus einem Ordner in ein Album
-    function importImagesFromFolder($albumId, $folderPath, $albumPath, $db) {
+    // Optional: Rekursiver Import von Unterordnern (mit Unteralben-Erstellung)
+    function importImagesFromFolder($albumId, $folderPath, $albumPath, $db, $userId = null, $scanSubFolders = true) {
         $files = scandir($folderPath);
         foreach ($files as $file) {
-            if (in_array(strtolower(pathinfo($file, PATHINFO_EXTENSION)), SUPPORTED_IMAGE_TYPES)) {
-                $sourcePath = $folderPath . '/' . $file;
+            // Überspringe . und ..
+            if ($file === '.' || $file === '..') {
+                continue;
+            }
+            
+            $sourcePath = $folderPath . '/' . $file;
+            
+            // Wenn es ein Ordner ist und rekursiver Import aktiviert ist
+            if (is_dir($sourcePath) && $scanSubFolders) {
+                // Erstelle ein Unteralbum
+                $subAlbumPath = $albumPath . '/' . $file;
                 
+                // Prüfe, ob dieses Unteralbum bereits existiert
+                $subAlbum = $db->fetchOne('SELECT * FROM albums WHERE path = :path AND deleted_at IS NULL', [
+                    'path' => $subAlbumPath
+                ]);
+                
+                // Wenn das Unteralbum noch nicht existiert, erstelle es
+                if (!$subAlbum) {
+                    $subAlbumId = $db->insert('albums', [
+                        'user_id' => $userId,
+                        'name' => $file,
+                        'path' => $subAlbumPath,
+                        'is_public' => 0,
+                        'parent_album_id' => $albumId, // Setze das übergeordnete Album
+                        'created_at' => date('Y-m-d H:i:s')
+                    ]);
+                    
+                    // Rekursiver Aufruf für das Unteralbum
+                    importImagesFromFolder($subAlbumId, $sourcePath, $subAlbumPath, $db, $userId, $scanSubFolders);
+                } else {
+                    // Unteralbum existiert bereits, verwende dessen ID für den rekursiven Aufruf
+                    importImagesFromFolder($subAlbum['id'], $sourcePath, $subAlbumPath, $db, $userId, $scanSubFolders);
+                }
+            }
+            // Wenn es eine Datei ist, prüfe ob es ein Bild ist
+            else if (in_array(strtolower(pathinfo($file, PATHINFO_EXTENSION)), SUPPORTED_IMAGE_TYPES)) {
                 // Den Originalpfad des Bildes beibehalten, nicht kopieren
                 $relativeSourcePath = str_replace(USER_STORAGE_PATH . '/', '', $sourcePath);
                 
@@ -110,7 +145,7 @@ function monitorUserFolders($db) {
                 if (!albumExists($userId, $fullPath, $db)) {
                     // Als Album-Namen nur den Ordnernamen ohne user_X/ verwenden
                     $albumId = createAlbum($userId, $fullPath, $folder, $db);
-                    importImagesFromFolder($albumId, $folderPath, $fullPath, $db);
+                    importImagesFromFolder($albumId, $folderPath, $fullPath, $db, $userId, true);
                 }
             }
         }

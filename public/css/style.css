@@ -43,6 +43,20 @@
     padding: 0;
     box-sizing: border-box;
 }
+/* Album Header Anpassung für Unterkategorien */
+.section-header {
+    display: flex;
+    align-items: center;
+}
+
+.album-header {
+    margin-left: 0 !important; /* Linksbündig, falls vorher margin gesetzt war */
+}
+
+/* Entfernt den Platz für den "Zurück"-Button, wenn dieser nicht angezeigt wird */
+.back-button {
+    display: none;
+}
 
 body {
     font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
@@ -203,6 +217,7 @@ section {
     border-radius: var(--border-radius);
     overflow: hidden;
     box-shadow: var(--card-shadow);
+    margin-top: 1em;
 }
 
 .album-cover img {
@@ -213,6 +228,10 @@ section {
 
 .album-info {
     flex: 1;
+}
+
+.created-info {
+    font-size: 0.8em;
 }
 
 h2 {
