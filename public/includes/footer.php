@@ -7,6 +7,6 @@
 ?>
 <footer>
     <div class="container">
-        <p>&copy; <?php echo date('Y'); ?> PicBlick.de</p>
+        <p>&copy; <?php echo date('Y'); ?> PicBlick.de by Staubi</p>
     </div>
 </footer>
