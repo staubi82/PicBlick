@@ -245,6 +245,14 @@ try {
         echo "<div class='warning'>Cover-Image-Spalte konnte nicht hinzugefügt werden: " . htmlspecialchars($e->getMessage()) . "</div>";
     }
     
+    // Füge fehlende description Spalte zur images-Tabelle hinzu
+    try {
+        $db->execute("ALTER TABLE images ADD COLUMN description TEXT DEFAULT NULL");
+        echo "<div class='success'>Description-Spalte zur images-Tabelle hinzugefügt. ✓</div>";
+    } catch (Exception $e) {
+        echo "<div class='warning'>Description-Spalte konnte nicht hinzugefügt werden: " . htmlspecialchars($e->getMessage()) . "</div>";
+    }
+    
     // Erstelle Demo-Admin
     $adminId = $db->insert('users', [
         'username' => INIT_ADMIN_USERNAME,
