@@ -690,10 +690,14 @@ $owner = $db->fetchOne(
 }
 </style>
 
+<!-- CSS für die Album-Navigation -->
+<link rel="stylesheet" href="/public/css/album-navigation.css">
+
 <script src="/public/js/main.js"></script>
 <script src="/public/album-edit.js"></script>
 <script src="/public/js/fullscreen-viewer.js"></script>
 <script src="/public/js/trash-handler.js"></script>
+<script src="/public/js/album-navigation.js"></script>
 </body>
 </html>
 

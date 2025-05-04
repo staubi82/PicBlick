@@ -1,0 +1,61 @@
+/**
+ * CSS für Album-Navigation mit Slide-Effekt
+ * Ermöglicht nahtlose Übergänge zwischen Alben
+ */
+
+/* Verhindert Scrollen während der Animation */
+.album-transition-active {
+    overflow: hidden;
+}
+
+/* Animation für das Cover */
+.album-cover {
+    transition: transform 0.5s ease-in-out, opacity 0.5s ease-in-out;
+    position: relative;
+    transform-origin: center center;
+}
+
+.slide-out-left {
+    transform: translateX(-100%);
+    opacity: 0;
+}
+
+.slide-in-right {
+    animation: slideInRight 0.5s forwards;
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* Animation für Album-Informationen und andere Elemente */
+.album-info,
+.subalbums-swiper,
+.image-grid {
+    transition: opacity 0.4s ease-in-out;
+}
+
+.fade-out {
+    opacity: 0;
+}
+
+.fade-in {
+    animation: fadeIn 0.4s forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Hover-Effekt für Unteralben anpassen */
+.subalbum-card {
+    cursor: pointer;
+}
