@@ -176,54 +176,104 @@ try {
     // Datenbankverbindung herstellen
     $db = Database::getInstance();
     
-    // Prüfe, ob die Datenbank bereits initialisiert ist
+    // Prüfe, ob die Datenbank existiert und lösche sie für Neuinitialisierung
     $dbExists = file_exists(DB_PATH);
     
     if ($dbExists) {
-        echo "<div class='warning'>Datenbank existiert bereits. Überspringen der Initialisierung.</div>";
-    } else {
-        // Schema-Datei laden und ausführen
-        $schemaFile = __DIR__ . '/lib/schema.sql';
+        // Schließe Datenbankverbindung, um die Datei zu löschen
+        $db->close();
         
-        if (!file_exists($schemaFile)) {
-            echo "<div class='error'>Schema-Datei nicht gefunden: $schemaFile</div>";
-            echo "</body></html>";
-            exit;
-        }
-        
-        $db->importSQL($schemaFile);
-        echo "<div class='success'>Datenbankschema erfolgreich importiert. ✓</div>";
-        
-        // Erstelle Demo-Admin
-        $adminId = $db->insert('users', [
-            'username' => INIT_ADMIN_USERNAME,
-            'password' => password_hash(INIT_ADMIN_PASSWORD, PASSWORD_ALGO),
-            'email' => INIT_ADMIN_EMAIL
-        ]);
-        
-        if ($adminId) {
-            echo "<div class='success'>Standard-Administrator erstellt:<br>
-                 Benutzername: " . htmlspecialchars(INIT_ADMIN_USERNAME) . "<br>
-                 Passwort: " . htmlspecialchars(INIT_ADMIN_PASSWORD) . "<br>
-                 <strong>Bitte ändern Sie das Passwort nach dem ersten Login!</strong>
-                 </div>";
-            
-            // Admin-Verzeichnis erstellen
-            $adminDir = USERS_PATH . '/user_' . $adminId;
-            if (!file_exists($adminDir)) {
-                mkdir($adminDir, 0755, true);
-            }
-            
-            // Admin-Favoriten-Verzeichnis erstellen
-            $adminFavoritesDir = $adminDir . '/favorites';
-            if (!file_exists($adminFavoritesDir)) {
-                mkdir($adminFavoritesDir, 0755, true);
-            }
-            
-            echo "<div class='success'>Benutzerverzeichnisse erstellt. ✓</div>";
+        if (unlink(DB_PATH)) {
+            echo "<div class='warning'>Bestehende Datenbank wurde gelöscht für Neuinitialisierung.</div>";
+            // Datenbankverbindung erneut herstellen
+            $db = Database::getInstance();
         } else {
-            echo "<div class='error'>Fehler beim Erstellen des Administrator-Kontos.</div>";
+            echo "<div class='error'>Konnte bestehende Datenbank nicht löschen. Versuche trotzdem zu initialisieren.</div>";
         }
+    }
+    
+    // Schema-Datei laden und ausführen
+    $schemaFile = __DIR__ . '/lib/schema.sql';
+    
+    if (!file_exists($schemaFile)) {
+        echo "<div class='error'>Schema-Datei nicht gefunden: $schemaFile</div>";
+        echo "</body></html>";
+        exit;
+    }
+    
+    // Lese und korrigiere das SQL-Schema
+    $schemaContent = file_get_contents($schemaFile);
+    
+    // Korrigiere fehlerhafte albums-Tabellendefinition (doppelte Spalten entfernen)
+    $schemaContent = str_replace(
+        "CREATE TABLE IF NOT EXISTS albums (\n    user_id INTEGER NOT NULL,\n    name TEXT NOT NULL,\n    UNIQUE(user_id, name),",
+        "CREATE TABLE IF NOT EXISTS albums (",
+        $schemaContent
+    );
+    
+    // Speichere korrigiertes Schema temporär
+    $tempSchemaFile = __DIR__ . '/temp_schema.sql';
+    file_put_contents($tempSchemaFile, $schemaContent);
+    
+    // Importiere korrigiertes Schema
+    $db->importSQL($tempSchemaFile);
+    
+    // Lösche temporäre Schemadatei
+    unlink($tempSchemaFile);
+    
+    echo "<div class='success'>Datenbankschema erfolgreich importiert. ✓</div>";
+    
+    // Wende Schema-Updates an
+    $updateSchemaFile = __DIR__ . '/lib/update_schema.sql';
+    if (file_exists($updateSchemaFile)) {
+        $db->importSQL($updateSchemaFile);
+        echo "<div class='success'>Schema-Updates erfolgreich angewendet. ✓</div>";
+    }
+    
+    // Wende Trash-Schema-Updates an
+    $trashSchemaFile = __DIR__ . '/lib/update_trash_schema.sql';
+    if (file_exists($trashSchemaFile)) {
+        $db->importSQL($trashSchemaFile);
+        echo "<div class='success'>Trash-Schema-Updates erfolgreich angewendet. ✓</div>";
+    }
+    
+    // Füge fehlende cover_image_id Spalte zur albums-Tabelle hinzu
+    try {
+        $db->execute("ALTER TABLE albums ADD COLUMN cover_image_id INTEGER DEFAULT NULL REFERENCES images(id)");
+        echo "<div class='success'>Cover-Image-Spalte zur albums-Tabelle hinzugefügt. ✓</div>";
+    } catch (Exception $e) {
+        echo "<div class='warning'>Cover-Image-Spalte konnte nicht hinzugefügt werden: " . htmlspecialchars($e->getMessage()) . "</div>";
+    }
+    
+    // Erstelle Demo-Admin
+    $adminId = $db->insert('users', [
+        'username' => INIT_ADMIN_USERNAME,
+        'password' => password_hash(INIT_ADMIN_PASSWORD, PASSWORD_ALGO),
+        'email' => INIT_ADMIN_EMAIL
+    ]);
+    
+    if ($adminId) {
+        echo "<div class='success'>Standard-Administrator erstellt:<br>
+             Benutzername: " . htmlspecialchars(INIT_ADMIN_USERNAME) . "<br>
+             Passwort: " . htmlspecialchars(INIT_ADMIN_PASSWORD) . "<br>
+             <strong>Bitte ändern Sie das Passwort nach dem ersten Login!</strong>
+             </div>";
+        
+        // Admin-Verzeichnis erstellen
+        $adminDir = USERS_PATH . '/user_' . $adminId;
+        if (!file_exists($adminDir)) {
+            mkdir($adminDir, 0755, true);
+        }
+        
+        // Admin-Favoriten-Verzeichnis erstellen
+        $adminFavoritesDir = $adminDir . '/favorites';
+        if (!file_exists($adminFavoritesDir)) {
+            mkdir($adminFavoritesDir, 0755, true);
+        }
+        
+        echo "<div class='success'>Benutzerverzeichnisse erstellt. ✓</div>";
+    } else {
+        echo "<div class='error'>Fehler beim Erstellen des Administrator-Kontos.</div>";
     }
 } catch (Exception $e) {
     echo "<div class='error'>Datenbankfehler: " . htmlspecialchars($e->getMessage()) . "</div>";

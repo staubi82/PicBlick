@@ -1,6 +1,6 @@
 # PicBlick - Moderne Fotogalerie-Anwendung
 
-![PHP Version](https://img.shields.io/badge/PHP-%3E%3D7.4-8892BF)
+![PHP Version](https://img.shields.io/badge/PHP-%3E%3D8.4-8892BF)
 ![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)
 
 ## Übersicht
@@ -19,7 +19,7 @@ PicBlick ist eine leistungsstarke, selbst-gehostete Fotogalerie-Anwendung, die e
 
 ## Systemvoraussetzungen
 
-- PHP 7.4 oder höher
+- PHP 8.4 oder höher
 - SQLite3-Erweiterung
 - GD-Bildverarbeitungserweiterung
 - EXIF-Erweiterung
@@ -28,18 +28,42 @@ PicBlick ist eine leistungsstarke, selbst-gehostete Fotogalerie-Anwendung, die e
 
 ## Installation
 
-### 1. Vorbereitung
+### 1. PHP 8.4 & Erweiterungen installieren
+
+Debian (Bookworm+) liefert kein PHP 8.4 aus den Standard-Repos. Deshalb erst das SURY-Repo einbinden und dann PHP 8.4 mit den benötigten Erweiterungen installieren:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates apt-transport-https lsb-release wget gnupg
+
+wget -qO- https://packages.sury.org/php/apt.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/php.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/php.gpg] \
+  https://packages.sury.org/php/ $(lsb_release -sc) main" \
+  | sudo tee /etc/apt/sources.list.d/php-sury.list
+
+sudo apt update
+
+sudo apt install -y \
+  php8.4 \
+  php8.4-fpm \
+  php8.4-gd \
+  php8.4-exif \
+  php8.4-sqlite3
+
+sudo systemctl restart php8.4-fpm
+```
+
+### 2. Vorbereitung
 
 ```bash
 # Repository klonen
-git clone https://github.com/dein-benutzername/PicBlick.git
+git clone https://github.com/staubi82/PicBlick.git
 cd PicBlick
-
-# Konfigurationsdatei erstellen (falls nicht vorhanden)
-touch app/config.php
 ```
 
-### 2. Konfiguration anpassen
+### 3. Konfiguration anpassen
 
 Bearbeite die Datei `app/config.php` und passe die Einstellungen an deine Umgebung an:
 
@@ -53,14 +77,22 @@ define('INIT_ADMIN_PASSWORD', 'sicheres-passwort'); // Unbedingt ändern!
 define('INIT_ADMIN_EMAIL', 'admin@example.com');
 ```
 
-### 3. Verzeichnisberechtigungen setzen
+### 4. Verzeichnisberechtigungen setzen
+
+Damit der Webserver (PHP-FPM) Schreibrechte auf die PicBlick-Verzeichnisse hat:
 
 ```bash
-# Berechtigungen für Speicherverzeichnisse setzen
-chmod -R 755 storage/
+# Owner auf den Web-User ändern (meist www-data bei Debian/Ubuntu)
+sudo chown -R www-data:www-data /Pfad/zu/PicBlick
+
+# Verzeichnis- und Datei-Rechte setzen
+# Alle Ordner auf 755
+sudo find /Pfad/zu/PicBlick -type d -exec chmod 755 {} \;
+# Alle Dateien auf 644
+sudo find /Pfad/zu/PicBlick -type f -exec chmod 644 {} \;
 ```
 
-### 4. Setup ausführen
+### 5. Setup ausführen
 
 Öffne in deinem Browser:
 ```
@@ -73,7 +105,7 @@ Das Setup-Skript führt dich durch den Installationsprozess:
 - Erstellung der Verzeichnisstruktur
 - Einrichtung des Administrator-Kontos
 
-### 5. Fertigstellung
+### 6. Fertigstellung
 
 Nach Abschluss des Setups kannst du dich mit den Admin-Zugangsdaten anmelden:
 - Benutzername: Der in der Konfiguration festgelegte Wert (Standard: `admin`)
