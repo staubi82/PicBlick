@@ -62,6 +62,9 @@ foreach ($files as $file) {
     } else if (in_array($type, ['image/jpeg', 'image/png', 'image/gif'])) {
         // Es ist ein Bild
         $imageFiles[] = $file;
+    } else if (in_array($type, ['video/mp4', 'video/webm', 'video/ogg'])) {
+        // Es ist ein Video
+        $imageFiles[] = $file; // Wir verwenden weiterhin imageFiles, da die DB-Tabelle erweitert wurde
     }
 }
 
@@ -116,6 +119,23 @@ foreach ($imageFiles as $file) {
             'preview' => "" // In einem echten System würde hier ein Base64-Preview erstellt werden
         ];
     }
+}
+
+// Neue Dateien in die Datenbank einfügen
+foreach ($newFiles as $file) {
+    $filename = $file['name'];
+    $mediaType = strpos($file['type'], 'video') === 0 ? 'video' : 'image';
+    
+    // Einfügen in die images-Tabelle
+    $db->execute(
+        "INSERT INTO images (filename, album_id, media_type, is_public, upload_date) VALUES (:filename, :album_id, :media_type, :is_public, datetime('now'))",
+        [
+            ':filename' => $filename,
+            ':album_id' => $albumId,
+            ':media_type' => $mediaType,
+            ':is_public' => $makePublic ? 1 : 0
+        ]
+    );
 }
 
 // Wenn Sync-Deletions aktiviert ist, identifiziere Dateien, die im Album sind aber nicht im Ordner

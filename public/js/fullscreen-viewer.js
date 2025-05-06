@@ -21,7 +21,16 @@ function initFullscreenViewer() {
                     <button class="nav-button prev-button">&lt;</button>
                     <button class="nav-button next-button">&gt;</button>
                 </div>
-                <img src="" class="viewer-image" alt="">
+                <!-- Container für Medieninhalt (Bild oder Video) -->
+                <div class="media-container">
+                    <img src="" class="viewer-image" alt="">
+                    <div class="video-wrapper" style="display: none;">
+                        <video class="viewer-video" controls>
+                            <source src="" type="">
+                            Ihr Browser unterstützt das Video-Tag nicht.
+                        </video>
+                    </div>
+                </div>
                 <div class="control-pill">
                     <button class="rotate-left-button" title="Links drehen" aria-label="Bild nach links drehen">↺</button>
                     <button class="favorite-toggle" title="Favorit umschalten" aria-label="Favorit umschalten">★</button>
@@ -34,7 +43,11 @@ function initFullscreenViewer() {
     
     // Referenzen auf Elemente
     const viewer = document.querySelector('.fullscreen-viewer');
+    const mediaContainer = viewer.querySelector('.media-container');
     const viewerImage = viewer.querySelector('.viewer-image');
+    const videoWrapper = viewer.querySelector('.video-wrapper');
+    const viewerVideo = viewer.querySelector('.viewer-video');
+    const videoSource = viewerVideo.querySelector('source');
     const closeButton = viewer.querySelector('.viewer-close');
     const prevButton = viewer.querySelector('.prev-button');
     const nextButton = viewer.querySelector('.next-button');
@@ -55,7 +68,7 @@ function initFullscreenViewer() {
     let lastX = 0;
     let lastY = 0;
     
-    // Event-Listener für Bildklicks in der Galerie
+    // Event-Listener für Medienklicks in der Galerie
     document.querySelectorAll('.image-grid .image-card').forEach((card, index) => {
         card.addEventListener('click', (e) => {
             // Ignoriere Klicks auf Action-Buttons innerhalb der Karte
@@ -63,18 +76,39 @@ function initFullscreenViewer() {
                 return;
             }
             
-            // Sammle alle Bilder in der aktuellen Galerie
-            const allImages = Array.from(document.querySelectorAll('.image-grid .image-card'));
+            // Sammle alle Medien in der aktuellen Galerie
+            const allMedia = Array.from(document.querySelectorAll('.image-grid .image-card'));
             
-            currentImages = allImages.map(imgCard => {
-                const rotation = parseInt(imgCard.dataset.rotation || '0', 10);
+            currentImages = allMedia.map(mediaCard => {
+                const rotation = parseInt(mediaCard.dataset.rotation || '0', 10);
+                
+                // Bestimme Medientyp (Video oder Bild)
+                const isVideo = mediaCard.querySelector('.video-thumbnail') !== null;
+                
+                // Ermittle MIME-Typ für Videos
+                let mimeType = 'video/mp4'; // Standard-Fallback
+                if (isVideo) {
+                    const filename = mediaCard.dataset.imageName || '';
+                    const extension = filename.split('.').pop().toLowerCase();
+                    const mimeMap = {
+                        'mp4': 'video/mp4',
+                        'mov': 'video/quicktime',
+                        'avi': 'video/x-msvideo',
+                        'mkv': 'video/x-matroska',
+                        'webm': 'video/webm'
+                    };
+                    mimeType = mimeMap[extension] || 'video/mp4';
+                }
+                
                 return {
-                    src: imgCard.dataset.fullSrc || imgCard.querySelector('img').src,
-                    id: imgCard.dataset.imageId,
-                    name: imgCard.dataset.imageName || '',
+                    src: mediaCard.dataset.fullSrc || mediaCard.querySelector('img').src,
+                    id: mediaCard.dataset.imageId,
+                    name: mediaCard.dataset.imageName || '',
                     rotation: rotation,
-                    description: imgCard.dataset.description || '',
-                    isFavorite: imgCard.dataset.favorite === 'true'
+                    description: mediaCard.dataset.description || '',
+                    isFavorite: mediaCard.dataset.favorite === 'true',
+                    isVideo: isVideo,
+                    mimeType: mimeType
                 };
             });
             currentIndex = index;
@@ -102,11 +136,23 @@ function initFullscreenViewer() {
     function updateViewer() {
         const currentImage = currentImages[currentIndex];
         
-        // Bild setzen
-        viewerImage.src = currentImage.src;
-        viewerImage.alt = currentImage.name;
+        // Entscheiden, ob Video oder Bild angezeigt werden soll
+        if (currentImage.isVideo) {
+            // Video anzeigen, Bild ausblenden
+            viewerImage.style.display = 'none';
+            videoWrapper.style.display = 'flex';
+            videoSource.src = currentImage.src;
+            videoSource.type = currentImage.mimeType;
+            viewerVideo.load(); // Video neu laden
+        } else {
+            // Bild anzeigen, Video ausblenden
+            viewerImage.style.display = 'block';
+            videoWrapper.style.display = 'none';
+            viewerImage.src = currentImage.src;
+            viewerImage.alt = currentImage.name;
+        }
         
-        // Transformation zurücksetzen
+        // Transformation zurücksetzen (nur für Bilder relevant)
         updateImageTransform();
         
         // Favoriten-Status aktualisieren
@@ -117,10 +163,21 @@ function initFullscreenViewer() {
         // Navigation-Buttons anzeigen/ausblenden
         prevButton.style.visibility = currentIndex > 0 ? 'visible' : 'hidden';
         nextButton.style.visibility = currentIndex < currentImages.length - 1 ? 'visible' : 'hidden';
+        
+        // Rotations-Buttons für Videos ausblenden
+        if (rotateLeftButton && rotateRightButton) {
+            rotateLeftButton.style.display = currentImage.isVideo ? 'none' : 'block';
+            rotateRightButton.style.display = currentImage.isVideo ? 'none' : 'block';
+        }
     }
     
     // Schließen des Viewers
     function closeViewer() {
+        // Falls ein Video läuft, stoppen
+        if (viewerVideo && !viewerVideo.paused) {
+            viewerVideo.pause();
+        }
+        
         viewer.classList.remove('active');
         document.body.style.overflow = '';
     }
@@ -130,9 +187,14 @@ function initFullscreenViewer() {
         viewerImage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale}) rotate(${rotation}deg)`;
     }
     
-    // Zum nächsten Bild navigieren
+    // Zum nächsten Bild/Video navigieren
     function nextImage() {
         if (currentIndex < currentImages.length - 1) {
+            // Falls aktuell ein Video läuft, pausieren
+            if (viewerVideo && !viewerVideo.paused) {
+                viewerVideo.pause();
+            }
+            
             currentIndex++;
             scale = 1;
             translateX = 0;
@@ -142,9 +204,14 @@ function initFullscreenViewer() {
         }
     }
     
-    // Zum vorherigen Bild navigieren
+    // Zum vorherigen Bild/Video navigieren
     function prevImage() {
         if (currentIndex > 0) {
+            // Falls aktuell ein Video läuft, pausieren
+            if (viewerVideo && !viewerVideo.paused) {
+                viewerVideo.pause();
+            }
+            
             currentIndex--;
             scale = 1;
             translateX = 0;
@@ -348,6 +415,34 @@ function initFullscreenViewer() {
 // Styles für den Vollbild-Viewer
 const style = document.createElement('style');
 style.textContent = `
+// Styles für den Video-Player und Media-Container
+.media-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    max-width: 90%;
+    max-height: 80vh;
+}
+
+.video-wrapper {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 90%;
+    max-height: 80vh;
+}
+
+.viewer-video {
+    max-width: 100%;
+    max-height: 80vh;
+    background-color: black;
+    border-radius: 4px;
+}
+
+
 .fullscreen-viewer {
     position: fixed;
     top: 0;

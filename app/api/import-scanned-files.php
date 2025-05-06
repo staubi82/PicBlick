@@ -79,15 +79,78 @@ if (isset($scanData['new_files']) && is_array($scanData['new_files'])) {
         $uploadSuccess = true;
         
         if ($uploadSuccess) {
-            // Simuliere Thumbnailgenerierung und EXIF-Bearbeitung
-            // In einem echten System würde hier die Datei verarbeitet werden
+            // Dateityp ermitteln und Thumbnail erstellen
+            $fileExtension = strtolower(pathinfo($uniqueName, PATHINFO_EXTENSION));
+            $isVideo = in_array($fileExtension, ['mp4', 'webm', 'mov', 'avi', 'mkv']);
+            $mediaType = $isVideo ? 'video' : 'image';
             
-            // Füge Bild zur Datenbank hinzu
-            $imageId = $db->insert('images', [
+            // Pfade für die Datei und das Thumbnail
+            $thumbPath = $thumbDir . $uniqueName;
+            
+            // Thumbnail erstellen - für Bilder oder Videos
+            if ($isVideo) {
+                // Prüfen, ob FFmpeg verfügbar ist
+                $ffmpegAvailable = Imaging::isFFmpegAvailable();
+                
+                if ($ffmpegAvailable) {
+                    // FFmpeg ist verfügbar, erstelle ein Thumbnail aus dem Video (Frame bei 10 Sekunden)
+                    $success = Imaging::createVideoThumbnail($destination, $thumbPath, THUMB_WIDTH, THUMB_HEIGHT, 10);
+                    
+                    if (!$success) {
+                        error_log("Konnte Video-Thumbnail nicht erstellen für: $uniqueName");
+                        // Fallback: Standard-Video-Thumbnail
+                        copy(__DIR__ . "/../../public/img/video-thumbnail.jpg", $thumbPath);
+                    }
+                } else {
+                    // FFmpeg nicht verfügbar, verwende Standard-Video-Thumbnail
+                    if (file_exists(__DIR__ . "/../../public/img/video-thumbnail.jpg")) {
+                        copy(__DIR__ . "/../../public/img/video-thumbnail.jpg", $thumbPath);
+                    } else {
+                        error_log("Standard-Video-Thumbnail nicht gefunden. FFmpeg wird benötigt, um Video-Thumbnails zu erstellen.");
+                        // Versuche, eine eigene zu erstellen
+                        $img = imagecreatetruecolor(320, 240);
+                        $textcolor = imagecolorallocate($img, 255, 255, 255);
+                        $bg = imagecolorallocate($img, 0, 0, 0);
+                        imagefilledrectangle($img, 0, 0, 320, 240, $bg);
+                        imagestring($img, 5, 110, 100, 'VIDEO', $textcolor);
+                        imagestring($img, 3, 60, 120, 'FFmpeg not installed', $textcolor);
+                        imagejpeg($img, $thumbPath, 90);
+                        imagedestroy($img);
+                    }
+                }
+            } else {
+                // Normales Bild-Thumbnail erstellen
+                Imaging::createThumbnail($destination, $thumbPath);
+            }
+            
+            // Prüfen, ob die mime_type-Spalte existiert
+            $hasColumn = false;
+            try {
+                $columns = $db->fetchAll("PRAGMA table_info(images)");
+                foreach ($columns as $column) {
+                    if ($column['name'] === 'mime_type') {
+                        $hasColumn = true;
+                        break;
+                    }
+                }
+            } catch (Exception $e) {
+                // Fehlerbehandlung - im Zweifelsfall Column nicht verwenden
+            }
+            
+            // Daten vorbereiten und Bild/Video zur Datenbank hinzufügen
+            $imageData = [
                 'filename' => $uniqueName,
                 'album_id' => $album['id'],
-                'is_public' => $makePublic ? 1 : 0
-            ]);
+                'is_public' => $makePublic ? 1 : 0,
+                'media_type' => $mediaType
+            ];
+            
+            // Mime-Type nur hinzufügen, wenn die Spalte existiert
+            if ($hasColumn) {
+                $imageData['mime_type'] = $isVideo ? 'video/' . $fileExtension : 'image/' . $fileExtension;
+            }
+            
+            $imageId = $db->insert('images', $imageData);
             
             if ($imageId) {
                 // Simuliere Metadaten-Extraktion und -Speicherung

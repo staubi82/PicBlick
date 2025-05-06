@@ -289,22 +289,78 @@ try {
     $updateMode = isset($_GET['mode']) && $_GET['mode'] === 'update';
     
     if ($dbExists) {
+        // Für Update und Neuinitialisierung das Schema importieren, um neue Spalten hinzuzufügen
+        echo "<div class='success'>Datenbank existiert. Schema wird aktualisiert.</div>";
+        $schemaFile = __DIR__ . '/lib/schema.sql';
+    
+        if (!file_exists($schemaFile)) {
+            echo "<div class='error'>Schema-Datei nicht gefunden: $schemaFile</div>";
+            echo "</body></html>";
+            exit;
+        }
+    
+        // Lese und korrigiere das SQL-Schema
+        $schemaContent = file_get_contents($schemaFile);
+    
+        // Korrigiere fehlerhafte albums-Tabellendefinition (doppelte Spalten entfernen)
+        $schemaContent = str_replace(
+            "CREATE TABLE IF NOT EXISTS albums (\n    user_id INTEGER NOT NULL,\n    name TEXT NOT NULL,\n    UNIQUE(user_id, name),",
+            "CREATE TABLE IF NOT EXISTS albums (",
+            $schemaContent
+        );
+    
+        // Speichere korrigiertes Schema temporär
+        $tempSchemaFile = __DIR__ . '/temp_schema.sql';
+        file_put_contents($tempSchemaFile, $schemaContent);
+    
+        // Importiere korrigiertes Schema
+        $db->importSQL($tempSchemaFile);
+    
+        // Lösche temporäre Schemadatei
+        unlink($tempSchemaFile);
+    
+        echo "<div class='success'>Datenbankschema erfolgreich importiert/aktualisiert. ✓</div>";
+    
         if (!$updateMode) {
-            // Schließe Datenbankverbindung, um die Datei zu löschen
+            // Neuinitialisierung: Datenbankdatei löschen und neu anlegen
             $db->close();
-            
             if (unlink(DB_PATH)) {
-                echo "<div class='warning'>Bestehende Datenbank wurde gelöscht für Neuinitialisierung.</div>";
-                // Datenbankverbindung erneut herstellen
+                echo "<div class='success'>Bestehende Datenbank wurde gelöscht für Neuinitialisierung.</div>";
                 $db = Database::getInstance();
             } else {
                 echo "<div class='error'>Konnte bestehende Datenbank nicht löschen. Versuche trotzdem zu initialisieren.</div>";
             }
-        } else {
-            echo "<div class='success'>Update-Modus: Bestehende Datenbank wird aktualisiert.</div>";
+        }
+    } else {
+        // Datenbank existiert nicht, normale Neuinstallation
+        if (!$updateMode) {
+            echo "<div class='success'>Datenbank existiert nicht. Neuinstallation wird durchgeführt.</div>";
+            $schemaFile = __DIR__ . '/lib/schema.sql';
+    
+            if (!file_exists($schemaFile)) {
+                echo "<div class='error'>Schema-Datei nicht gefunden: $schemaFile</div>";
+                echo "</body></html>";
+                exit;
+            }
+    
+            $schemaContent = file_get_contents($schemaFile);
+    
+            $schemaContent = str_replace(
+                "CREATE TABLE IF NOT EXISTS albums (\n    user_id INTEGER NOT NULL,\n    name TEXT NOT NULL,\n    UNIQUE(user_id, name),",
+                "CREATE TABLE IF NOT EXISTS albums (",
+                $schemaContent
+            );
+    
+            $tempSchemaFile = __DIR__ . '/temp_schema.sql';
+            file_put_contents($tempSchemaFile, $schemaContent);
+    
+            $db->importSQL($tempSchemaFile);
+    
+            unlink($tempSchemaFile);
+    
+            echo "<div class='success'>Datenbankschema erfolgreich importiert. ✓</div>";
         }
     }
-    
     // Schema-Datei laden und ausführen wenn im Neuinstallationsmodus oder DB nicht existiert
     if (!$dbExists || !$updateMode) {
         $schemaFile = __DIR__ . '/lib/schema.sql';
@@ -340,9 +396,10 @@ try {
     
     // Schema-Updates werden immer angewendet, unabhängig vom Modus, aber nur wenn die Spalten nicht bereits existieren
     
-    // Prüfe vorhandene Spalten in der users-Tabelle
+    // Prüfe vorhandene Spalten in den Tabellen
     $usersColumns = [];
     $albumsColumns = [];
+    $imagesColumns = [];
     
     try {
         $columnsUsers = $db->fetchAll("PRAGMA table_info(users)", []);
@@ -353,6 +410,11 @@ try {
         $columnsAlbums = $db->fetchAll("PRAGMA table_info(albums)", []);
         foreach ($columnsAlbums as $col) {
             $albumsColumns[] = $col['name'];
+        }
+        
+        $columnsImages = $db->fetchAll("PRAGMA table_info(images)", []);
+        foreach ($columnsImages as $col) {
+            $imagesColumns[] = $col['name'];
         }
     } catch (Exception $e) {
         echo "<div class='error'>Fehler beim Prüfen der Tabellenspalten: " . htmlspecialchars($e->getMessage()) . "</div>";
@@ -370,6 +432,18 @@ try {
                 echo "<div class='success'>Profil-Bild-Spalte zur users-Tabelle hinzugefügt. ✓</div>";
             } catch (Exception $e) {
                 echo "<div class='warning'>Profil-Bild-Spalte konnte nicht hinzugefügt werden: " . htmlspecialchars($e->getMessage()) . "</div>";
+            }
+        }
+        
+        // Prüfe, ob media_type-Spalte bereits existiert
+        if (in_array('media_type', $imagesColumns)) {
+            echo "<div class='success'>media_type-Spalte existiert bereits in der images-Tabelle. ✓</div>";
+        } else {
+            try {
+                $db->execute("ALTER TABLE images ADD COLUMN media_type TEXT DEFAULT 'image'");
+                echo "<div class='success'>media_type-Spalte zur images-Tabelle hinzugefügt. ✓</div>";
+            } catch (Exception $e) {
+                echo "<div class='warning'>media_type-Spalte konnte nicht hinzugefügt werden: " . htmlspecialchars($e->getMessage()) . "</div>";
             }
         }
         
@@ -478,15 +552,31 @@ try {
         }
     }
     
-    // Prüfe vorhandene Spalten in der images-Tabelle
-    $imagesColumns = [];
-    try {
-        $columnsImages = $db->fetchAll("PRAGMA table_info(images)", []);
-        foreach ($columnsImages as $col) {
-            $imagesColumns[] = $col['name'];
+    // Wende MIME-Type-Schema-Updates an
+    $mimeTypeSchemaFile = __DIR__ . '/lib/update_mime_type_schema.sql';
+    if (file_exists($mimeTypeSchemaFile)) {
+        // Prüfe, ob mime_type-Spalte bereits existiert
+        $imagesColumns = [];
+        try {
+            $columnsImages = $db->fetchAll("PRAGMA table_info(images)", []);
+            foreach ($columnsImages as $col) {
+                $imagesColumns[] = $col['name'];
+            }
+        } catch (Exception $e) {
+            echo "<div class='error'>Fehler beim Prüfen der images-Tabellenspalten: " . htmlspecialchars($e->getMessage()) . "</div>";
         }
-    } catch (Exception $e) {
-        echo "<div class='error'>Fehler beim Prüfen der images-Tabellenspalten: " . htmlspecialchars($e->getMessage()) . "</div>";
+        
+        if (in_array('mime_type', $imagesColumns)) {
+            echo "<div class='success'>mime_type-Spalte existiert bereits in der images-Tabelle. ✓</div>";
+        } else {
+            try {
+                $db->execute("ALTER TABLE images ADD COLUMN mime_type TEXT DEFAULT NULL");
+                $db->execute("CREATE INDEX IF NOT EXISTS idx_images_mime_type ON images(mime_type)");
+                echo "<div class='success'>mime_type-Spalte zur images-Tabelle hinzugefügt. ✓</div>";
+            } catch (Exception $e) {
+                echo "<div class='warning'>mime_type-Spalte konnte nicht hinzugefügt werden: " . htmlspecialchars($e->getMessage()) . "</div>";
+            }
+        }
     }
     
     // Füge fehlende cover_image_id Spalte zur albums-Tabelle hinzu

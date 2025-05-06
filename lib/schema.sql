@@ -24,11 +24,12 @@ CREATE TABLE IF NOT EXISTS albums (
     UNIQUE(user_id, name)
 );
 
--- Bilder-Tabelle
+-- Bilder-Tabelle (erweitert für Videos)
 CREATE TABLE IF NOT EXISTS images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT NOT NULL,
     album_id INTEGER NOT NULL,
+    media_type TEXT DEFAULT 'image', -- 'image' oder 'video'
     is_public INTEGER DEFAULT 0,  -- 0 = privat, 1 = öffentlich
     upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME DEFAULT NULL,

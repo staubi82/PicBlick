@@ -443,4 +443,130 @@ class Imaging
         }
         return 0;
     }
+    
+    /**
+     * Prüft, ob FFmpeg auf dem System installiert ist
+     *
+     * @return bool true wenn FFmpeg verfügbar ist, sonst false
+     */
+    public static function isFFmpegAvailable()
+    {
+        static $available = null;
+        
+        if ($available === null) {
+            // Prüfe nur einmal pro Request
+            $output = [];
+            $returnCode = -1;
+            @exec("ffmpeg -version 2>&1", $output, $returnCode);
+            $available = ($returnCode === 0);
+            
+            if (!$available) {
+                error_log("FFmpeg ist nicht installiert oder nicht im PATH. Video-Thumbnails können nicht erstellt werden.");
+            }
+        }
+        
+        return $available;
+    }
+    
+    /**
+     * Ermittelt die Länge eines Videos in Sekunden
+     *
+     * @param string $videoPath Pfad zum Video
+     * @return float|false Länge in Sekunden oder false bei Fehler
+     */
+    public static function getVideoDuration($videoPath)
+    {
+        if (!self::isFFmpegAvailable() || !file_exists($videoPath)) {
+            return false;
+        }
+        
+        // FFprobe-Befehl zum Ermitteln der Videolänge
+        $cmd = "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 " .
+               escapeshellarg($videoPath) . " 2>&1";
+        
+        $output = [];
+        $returnCode = -1;
+        exec($cmd, $output, $returnCode);
+        
+        if ($returnCode !== 0 || empty($output)) {
+            error_log("Fehler beim Ermitteln der Videolänge: " . implode("\n", $output));
+            return false;
+        }
+        
+        return floatval(trim($output[0]));
+    }
+    
+    /**
+     * Erzeugt ein Thumbnail aus einem Video
+     *
+     * @param string $sourcePath Quellpfad des Videos
+     * @param string $destPath Zielpfad des Thumbnails
+     * @param int $width Breite des Thumbnails
+     * @param int $height Höhe des Thumbnails
+     * @param int $framePos Position des Frames in Sekunden (Standard: 10 Sekunden)
+     * @return bool true bei Erfolg, false bei Fehler
+     */
+    public static function createVideoThumbnail($sourcePath, $destPath, $width = THUMB_WIDTH, $height = THUMB_HEIGHT, $framePos = 10)
+    {
+        // Prüfe, ob FFmpeg verfügbar ist
+        if (!self::isFFmpegAvailable()) {
+            error_log("Konnte Video-Thumbnail nicht erstellen: FFmpeg ist nicht installiert");
+            return false;
+        }
+        
+        if (!file_exists($sourcePath)) {
+            error_log("Video-Quelldatei nicht gefunden: $sourcePath");
+            return false;
+        }
+        
+        // Ermittle die Länge des Videos
+        $duration = self::getVideoDuration($sourcePath);
+        
+        // Wenn die Länge nicht ermittelt werden konnte oder das Video kürzer als der gewünschte Frame ist
+        if ($duration === false) {
+            error_log("Konnte Videolänge nicht ermitteln, verwende Standard-Frame bei {$framePos}s");
+        } elseif ($duration < $framePos) {
+            // Wenn das Video kürzer als der gewünschte Frame ist, nehme die Hälfte der Videolänge
+            $newFramePos = max(0, $duration / 2);
+            error_log("Video ist kürzer als {$framePos}s (tatsächlich: {$duration}s), verwende Frame bei {$newFramePos}s");
+            $framePos = $newFramePos;
+        }
+        
+        // Stelle sicher, dass der Zielordner existiert
+        $destDir = dirname($destPath);
+        if (!file_exists($destDir)) {
+            if (!mkdir($destDir, 0755, true) && !is_dir($destDir)) {
+                error_log("Konnte Zielverzeichnis nicht erstellen: $destDir");
+                return false;
+            }
+        }
+
+        // Temporäre Datei für den Frame
+        $tempFramePath = sys_get_temp_dir() . '/' . uniqid('frame_') . '.jpg';
+        
+        // FFmpeg-Befehl zum Extrahieren eines Frames
+        $ffmpegCmd = "ffmpeg -i " . escapeshellarg($sourcePath) . " -ss " . floatval($framePos) .
+                     " -frames:v 1 -q:v 2 " . escapeshellarg($tempFramePath) . " 2>&1";
+        
+        // FFmpeg ausführen
+        $output = [];
+        $returnCode = -1;
+        exec($ffmpegCmd, $output, $returnCode);
+        
+        // Prüfen, ob der Frame erfolgreich extrahiert wurde
+        if ($returnCode !== 0 || !file_exists($tempFramePath)) {
+            error_log("Fehler beim Extrahieren des Video-Frames: " . implode("\n", $output));
+            return false;
+        }
+        
+        // Jetzt den Frame zum Thumbnail verarbeiten
+        $success = self::createThumbnail($tempFramePath, $destPath, $width, $height, true);
+        
+        // Temporäre Datei löschen
+        if (file_exists($tempFramePath)) {
+            unlink($tempFramePath);
+        }
+        
+        return $success;
+    }
 }

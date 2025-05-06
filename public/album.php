@@ -132,7 +132,8 @@ unset($subAlbum); // Referenz nach foreach-Schleife aufheben
 $images = $db->fetchAll(
     "SELECT i.*,
      (SELECT COUNT(*) FROM favorites WHERE image_id = i.id AND user_id = :user_id) > 0 AS is_favorite,
-     COALESCE(i.description, '') as description
+     COALESCE(i.description, '') as description,
+     COALESCE(i.media_type, 'image') as media_type
      FROM images i
      WHERE i.album_id = :album_id AND i.deleted_at IS NULL
      ORDER BY i.upload_date DESC",
@@ -431,10 +432,21 @@ $owner = $db->fetchOne(
                                  data-favorite="<?php echo $image['is_favorite'] ? 'true' : 'false'; ?>"
                                  data-rotation="<?php echo $image['rotation'] ?? 0; ?>"
                                  data-description="<?php echo htmlspecialchars($image['description'] ?? ''); ?>">
-                                <img src="<?php echo $thumbnailUrl; ?>"
-                                     alt="<?php echo htmlspecialchars($image['filename']); ?>"
-                                     onerror="this.onerror=null;this.src='/public/img/default-album.jpg';"
-                                     style="--rotation: <?php echo $image['rotation'] ?? 0; ?>deg;">
+                                <?php if ($image['media_type'] === 'video'): ?>
+                                    <!-- Video-Thumbnail anzeigen mit Play-Symbol -->
+                                    <div class="video-thumbnail">
+                                        <img src="<?php echo file_exists(THUMBS_PATH . '/' . $cleanPath . '/' . $filename) ?
+                                            $thumbnailUrl : '/public/img/default-video-thumb.png'; ?>"
+                                             alt="<?php echo htmlspecialchars($image['filename']); ?>"
+                                             onerror="this.onerror=null;this.src='/public/img/default-video-thumb.png';">
+                                        <div class="video-play-icon">▶</div>
+                                    </div>
+                                <?php else: ?>
+                                    <img src="<?php echo $thumbnailUrl; ?>"
+                                         alt="<?php echo htmlspecialchars($image['filename']); ?>"
+                                         onerror="this.onerror=null;this.src='/public/img/default-album.jpg';"
+                                         style="--rotation: <?php echo $image['rotation'] ?? 0; ?>deg;">
+                                <?php endif; ?>
                                 
                                 <div class="image-overlay">
                                     <div class="image-actions">
@@ -687,6 +699,44 @@ $owner = $db->fetchOne(
     .swiper-slide {
         width: 130px; /* Etwas kleiner auf mobilen Geräten */
     }
+}
+
+/* Video-Thumbnail Styling */
+.video-thumbnail {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.video-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.video-play-icon {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    font-size: 20px;
+    opacity: 0.8;
+    transition: all 0.3s ease;
+}
+
+.video-thumbnail:hover .video-play-icon {
+    opacity: 1;
+    transform: scale(1.1);
+    background-color: rgba(0, 0, 0, 0.8);
 }
 </style>
 
