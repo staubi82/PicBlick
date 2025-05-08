@@ -36,11 +36,13 @@ if (isset($_GET['step']) && $_GET['step'] === 'finalize') {
         // Bei MySQL auch die anderen Einstellungen aktualisieren
         if ($dbType === 'mysql' || $dbType === 'pdo_mysql') {
             $dbHost = isset($_SESSION['db_host']) ? $_SESSION['db_host'] : 'localhost';
+            $dbPort = isset($_SESSION['db_port']) ? $_SESSION['db_port'] : '3306';
             $dbName = isset($_SESSION['db_name']) ? $_SESSION['db_name'] : 'picblick';
             $dbUser = isset($_SESSION['db_user']) ? $_SESSION['db_user'] : '';
             $dbPass = isset($_SESSION['db_pass']) ? $_SESSION['db_pass'] : '';
             
             $configContent = preg_replace('/define\(\'DB_HOST\',\s*\'.*?\'\);/', "define('DB_HOST', '$dbHost');", $configContent);
+            $configContent = preg_replace('/define\(\'DB_PORT\',\s*\'.*?\'\);/', "define('DB_PORT', '$dbPort');", $configContent);
             $configContent = preg_replace('/define\(\'DB_NAME\',\s*\'.*?\'\);/', "define('DB_NAME', '$dbName');", $configContent);
             $configContent = preg_replace('/define\(\'DB_USER\',\s*\'.*?\'\);/', "define('DB_USER', '$dbUser');", $configContent);
             $configContent = preg_replace('/define\(\'DB_PASS\',\s*\'.*?\'\);/', "define('DB_PASS', '$dbPass');", $configContent);
@@ -54,6 +56,7 @@ if (isset($_GET['step']) && $_GET['step'] === 'finalize') {
     // Nach der Finalisierung die Session-Variablen löschen
     unset($_SESSION['db_type']);
     unset($_SESSION['db_host']);
+    unset($_SESSION['db_port']);
     unset($_SESSION['db_name']);
     unset($_SESSION['db_user']);
     unset($_SESSION['db_pass']);
@@ -65,12 +68,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
     if ($dbType === 'mysql' || $dbType === 'pdo_mysql') {
         // MySQL-Optionen (mysqli oder PDO)
         $dbHost = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
+        $dbPort = isset($_POST['db_port']) ? $_POST['db_port'] : '3306';
         $dbName = isset($_POST['db_name']) ? $_POST['db_name'] : '';
         $dbUser = isset($_POST['db_user']) ? $_POST['db_user'] : '';
         $dbPass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
 
         $_SESSION['db_type'] = $dbType;
         $_SESSION['db_host'] = $dbHost;
+        $_SESSION['db_port'] = $dbPort;
         $_SESSION['db_name'] = $dbName;
         $_SESSION['db_user'] = $dbUser;
         $_SESSION['db_pass'] = $dbPass;
@@ -269,6 +274,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
             <div id="mysql-settings" style="display:none; margin-top:10px;">
                 <label for="db_host">Server:</label>
                 <input type="text" id="db_host" name="db_host" value="<?php echo isset($_POST['db_host']) ? htmlspecialchars($_POST['db_host']) : 'localhost'; ?>" />
+                <label for="db_port">Port:</label>
+                <input type="text" id="db_port" name="db_port" value="<?php echo isset($_POST['db_port']) ? htmlspecialchars($_POST['db_port']) : '3306'; ?>" />
                 <label for="db_name">Datenbankname:</label>
                 <input type="text" id="db_name" name="db_name" value="<?php echo isset($_POST['db_name']) ? htmlspecialchars($_POST['db_name']) : 'picblick'; ?>" />
                 <label for="db_user">Benutzer:</label>
