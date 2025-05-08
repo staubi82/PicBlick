@@ -1,6 +1,9 @@
 <?php
 session_start();
 
+// Benötigte Datenbankklassen einbinden
+require_once __DIR__ . '/lib/database.php';
+
 $error = '';
 $success = '';
 
@@ -67,10 +70,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
     
     if ($dbType === 'mysql' || $dbType === 'pdo_mysql') {
         // MySQL-Optionen (mysqli oder PDO)
-        $dbHost = isset($_POST['db_host']) ? $_POST['db_host'] : 'localhost';
-        $dbPort = isset($_POST['db_port']) ? $_POST['db_port'] : '3306';
-        $dbName = isset($_POST['db_name']) ? $_POST['db_name'] : '';
-        $dbUser = isset($_POST['db_user']) ? $_POST['db_user'] : '';
+        $dbHost = isset($_POST['db_host']) ? trim($_POST['db_host']) : 'localhost';
+        $dbPort = isset($_POST['db_port']) ? trim($_POST['db_port']) : '3306';
+        $dbName = isset($_POST['db_name']) ? trim($_POST['db_name']) : '';
+        $dbUser = isset($_POST['db_user']) ? trim($_POST['db_user']) : '';
         $dbPass = isset($_POST['db_pass']) ? $_POST['db_pass'] : '';
 
         $_SESSION['db_type'] = $dbType;
@@ -86,8 +89,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
                 $error = "MySQL-Treiber (mysqli) wird nicht unterstützt: Die mysqli-Erweiterung ist nicht installiert. Bitte verwenden Sie SQLite, PDO MySQL oder installieren Sie die mysqli-Erweiterung.";
             } else {
                 // Host und Port extrahieren (für Abwärtskompatibilität)
-                $host = $dbHost;
-                $port = $dbPort;
+                $host = trim($dbHost);
+                $port = trim($dbPort);
 
                 // Falls jemand versehentlich "host:port" im Host-Feld eingibt
                 if (strpos($host, ':') !== false) {
@@ -105,8 +108,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
                              "<br>Server: $host, Port: $port, Datenbank: $dbName";
                 } else {
                     $mysqli->close();
-                    header('Location: setup.php?step=finalize');
-                    exit;
+                    
+                    // Datenbankschema mit unserer Datenbankklasse importieren
+                    try {
+                        // DB_* Konstanten für temporäre Verwendung definieren
+                        define('DB_TYPE', 'mysql');
+                        define('DB_HOST', $host);
+                        define('DB_PORT', $port);
+                        define('DB_NAME', $dbName);
+                        define('DB_USER', $dbUser);
+                        define('DB_PASS', $dbPass);
+                        
+                        // Temporäre Datenbank-Instanz erstellen
+                        $db = new MySQLDatabase();
+                        
+                        // Schema-Datei importieren (MySQL-Version)
+                        $schemaFile = __DIR__ . '/lib/mysql_schema.sql';
+                        if (file_exists($schemaFile)) {
+                            $db->importSQL($schemaFile);
+                        }
+                        
+                        $db->close();
+                        header('Location: setup.php?step=finalize');
+                        exit;
+                    } catch (Exception $e) {
+                        $error = "Fehler beim Initialisieren des Datenbankschemas: " . $e->getMessage();
+                    }
                 }
             }
         } else {
@@ -115,8 +142,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
                 $error = "PDO MySQL-Treiber wird nicht unterstützt: Die pdo_mysql-Erweiterung ist nicht installiert. Bitte verwenden Sie SQLite, mysqli oder installieren Sie die pdo_mysql-Erweiterung.";
             } else {
                 // Host und Port extrahieren (für Abwärtskompatibilität)
-                $host = $dbHost;
-                $port = $dbPort;
+                $host = trim($dbHost);
+                $port = trim($dbPort);
 
                 // Falls jemand versehentlich "host:port" im Host-Feld eingibt
                 if (strpos($host, ':') !== false) {
@@ -136,9 +163,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
                         PDO::ATTR_EMULATE_PREPARES => false
                     ];
                     $pdo = new PDO($dsn, $dbUser, $dbPass, $options);
-                    $pdo = null; // Verbindung schließen
-                    header('Location: setup.php?step=finalize');
-                    exit;
+                    $pdo = null; // PDO-Verbindung schließen
+                    
+                    // Datenbankschema mit unserer Datenbankklasse importieren
+                    try {
+                        // DB_* Konstanten für temporäre Verwendung definieren
+                        define('DB_TYPE', 'pdo_mysql');
+                        define('DB_HOST', $host);
+                        define('DB_PORT', $port);
+                        define('DB_NAME', $dbName);
+                        define('DB_USER', $dbUser);
+                        define('DB_PASS', $dbPass);
+                        
+                        // Temporäre Datenbank-Instanz erstellen
+                        $db = new PDOMySQLDatabase();
+                        
+                        // Schema-Datei importieren (MySQL-Version)
+                        $schemaFile = __DIR__ . '/lib/mysql_schema.sql';
+                        if (file_exists($schemaFile)) {
+                            $db->importSQL($schemaFile);
+                        }
+                        
+                        $db->close();
+                        header('Location: setup.php?step=finalize');
+                        exit;
+                    } catch (Exception $e) {
+                        $error = "Fehler beim Initialisieren des Datenbankschemas: " . $e->getMessage();
+                    }
                 } catch (PDOException $e) {
                     $error = "PDO MySQL-Verbindungsfehler: " . $e->getMessage() .
                              "<br>DSN: mysql:host=$host;port=$port;dbname=$dbName";
@@ -161,8 +212,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
                 }
                 $db = new SQLite3($dbPath);
                 $db->close();
-                header('Location: setup.php?step=finalize');
-                exit;
+                
+                // Datenbankschema mit unserer Datenbankklasse importieren
+                try {
+                    // DB_* Konstanten für temporäre Verwendung definieren
+                    define('DB_TYPE', 'sqlite');
+                    define('DB_PATH', $dbPath);
+                    
+                    // Temporäre Datenbank-Instanz erstellen
+                    $sqliteDb = new SQLiteDatabase();
+                    
+                    // Schema-Datei importieren
+                    $schemaFile = __DIR__ . '/lib/schema.sql';
+                    if (file_exists($schemaFile)) {
+                        $sqliteDb->importSQL($schemaFile);
+                    }
+                    
+                    $sqliteDb->close();
+                    header('Location: setup.php?step=finalize');
+                    exit;
+                } catch (Exception $e) {
+                    $error = "Fehler beim Initialisieren des Datenbankschemas: " . $e->getMessage();
+                }
             } catch (Exception $e) {
                 $error = "SQLite-Fehler: " . $e->getMessage();
             }
@@ -188,8 +259,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
                 ];
                 $db = new PDO($dsn, null, null, $options);
                 $db = null; // Verbindung schließen
-                header('Location: setup.php?step=finalize');
-                exit;
+                
+                // Datenbankschema mit unserer Datenbankklasse importieren
+                try {
+                    // DB_* Konstanten für temporäre Verwendung definieren
+                    define('DB_TYPE', 'pdo_sqlite');
+                    define('DB_PATH', $dbPath);
+                    
+                    // Temporäre Datenbank-Instanz erstellen
+                    $pdoDb = new PDOSQLiteDatabase();
+                    
+                    // Schema-Datei importieren
+                    $schemaFile = __DIR__ . '/lib/schema.sql';
+                    if (file_exists($schemaFile)) {
+                        $pdoDb->importSQL($schemaFile);
+                    }
+                    
+                    $pdoDb->close();
+                    header('Location: setup.php?step=finalize');
+                    exit;
+                } catch (Exception $e) {
+                    $error = "Fehler beim Initialisieren des Datenbankschemas: " . $e->getMessage();
+                }
             } catch (PDOException $e) {
                 $error = "PDO SQLite-Fehler: " . $e->getMessage();
             }

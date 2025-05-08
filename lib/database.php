@@ -23,6 +23,7 @@ abstract class Database
     abstract public function lastError();
     abstract public function escapeString($string);
     abstract public function getTableInfo($table);
+    abstract public function importSQL($filename);
 
     public static function getInstance()
     {
@@ -233,6 +234,28 @@ class SQLiteDatabase extends Database
     {
         return $this->fetchAll("PRAGMA table_info($table)");
     }
+    
+    public function importSQL($filename) {
+        if (!file_exists($filename)) {
+            throw new Exception("SQL-Datei nicht gefunden: $filename");
+        }
+        
+        $sql = file_get_contents($filename);
+        $statements = explode(';', $sql);
+        
+        foreach ($statements as $statement) {
+            $statement = trim($statement);
+            if (!empty($statement)) {
+                try {
+                    $this->db->exec($statement);
+                } catch (Exception $e) {
+                    throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage() . " (Statement: $statement)");
+                }
+            }
+        }
+        
+        return true;
+    }
 }
 
 class MySQLDatabase extends Database
@@ -242,8 +265,8 @@ class MySQLDatabase extends Database
     public function __construct()
     {
         // Host und Port extrahieren (für Abwärtskompatibilität)
-        $host = DB_HOST;
-        $port = DB_PORT;
+        $host = trim(DB_HOST);
+        $port = trim(DB_PORT);
 
         // Falls der Host ein Port-Format enthält
         if (strpos($host, ':') !== false) {
@@ -396,6 +419,32 @@ class MySQLDatabase extends Database
             $this->db->close();
         }
     }
+    
+    public function importSQL($filename) {
+        if (!file_exists($filename)) {
+            throw new Exception("SQL-Datei nicht gefunden: $filename");
+        }
+        
+        $sql = file_get_contents($filename);
+        $statements = explode(';', $sql);
+        
+        $this->db->begin_transaction();
+        
+        try {
+            foreach ($statements as $statement) {
+                $statement = trim($statement);
+                if (!empty($statement)) {
+                    $this->db->query($statement);
+                }
+            }
+            
+            $this->db->commit();
+            return true;
+        } catch (Exception $e) {
+            $this->db->rollback();
+            throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage());
+        }
+    }
 
     public function lastError()
     {
@@ -421,8 +470,8 @@ class PDOMySQLDatabase extends Database
     {
         try {
             // Prüfen, ob ein gültiger Host angegeben wurde
-            $host = DB_HOST;
-            $port = DB_PORT;
+            $host = trim(DB_HOST);
+            $port = trim(DB_PORT);
 
             // Falls der Host ein Port-Format enthält (für Abwärtskompatibilität)
             if (strpos($host, ':') !== false) {
@@ -611,6 +660,32 @@ class PDOMySQLDatabase extends Database
     {
         return $this->fetchAll("SHOW COLUMNS FROM `$table`");
     }
+    
+    public function importSQL($filename) {
+        if (!file_exists($filename)) {
+            throw new Exception("SQL-Datei nicht gefunden: $filename");
+        }
+        
+        $sql = file_get_contents($filename);
+        $statements = explode(';', $sql);
+        
+        $this->db->beginTransaction();
+        
+        try {
+            foreach ($statements as $statement) {
+                $statement = trim($statement);
+                if (!empty($statement)) {
+                    $this->db->exec($statement);
+                }
+            }
+            
+            $this->db->commit();
+            return true;
+        } catch (PDOException $e) {
+            $this->db->rollBack();
+            throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage());
+        }
+    }
 }
 
 class PDOSQLiteDatabase extends Database
@@ -795,5 +870,31 @@ class PDOSQLiteDatabase extends Database
     public function getTableInfo($table)
     {
         return $this->fetchAll("PRAGMA table_info($table)");
+    }
+    
+    public function importSQL($filename) {
+        if (!file_exists($filename)) {
+            throw new Exception("SQL-Datei nicht gefunden: $filename");
+        }
+        
+        $sql = file_get_contents($filename);
+        $statements = explode(';', $sql);
+        
+        $this->db->beginTransaction();
+        
+        try {
+            foreach ($statements as $statement) {
+                $statement = trim($statement);
+                if (!empty($statement)) {
+                    $this->db->exec($statement);
+                }
+            }
+            
+            $this->db->commit();
+            return true;
+        } catch (PDOException $e) {
+            $this->db->rollBack();
+            throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage());
+        }
     }
 }
