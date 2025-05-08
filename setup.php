@@ -1,6 +1,73 @@
 <?php
 session_start();
 
+// Prüfen, ob die Installation bereits abgeschlossen wurde
+$installLockFile = __DIR__ . '/data/installed.lock';
+if (file_exists($installLockFile)) {
+    // Installation bereits abgeschlossen
+    echo '<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fotogalerie - Setup abgeschlossen</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #6200ee;
+        }
+        .message {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+        }
+        .warning {
+            color: #cf6679;
+            background-color: rgba(207, 102, 121, 0.1);
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        a {
+            color: #03dac6;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>Fotogalerie - Setup bereits abgeschlossen</h1>
+    <div class="message">
+        <div class="warning">
+            <strong>Hinweis:</strong> Die Installation wurde bereits abgeschlossen.
+            Aus Sicherheitsgründen kann Setup nicht erneut ausgeführt werden.
+        </div>
+        <p>Sie können:</p>
+        <ul>
+            <li><a href="index.php">Zur Startseite gehen</a></li>
+            <li><a href="public/login.php">Sich einloggen</a></li>
+        </ul>
+        <p>
+            <strong>Administrator-Hinweis:</strong> Wenn Sie die Installation zurücksetzen möchten,
+            löschen Sie die Datei <code>data/installed.lock</code>.
+        </p>
+    </div>
+</body>
+</html>';
+    exit;
+}
+
 // Benötigte Datenbankklassen einbinden
 require_once __DIR__ . '/lib/database.php';
 
@@ -54,6 +121,13 @@ if (isset($_GET['step']) && $_GET['step'] === 'finalize') {
         // Konfiguration speichern
         file_put_contents($configPath, $configContent);
         $success .= " Die Konfiguration wurde in config.php gespeichert.";
+        
+        // Erstelle ein Lock-File, um zu verhindern, dass setup.php erneut ausgeführt wird
+        $installDir = __DIR__ . '/data';
+        if (!file_exists($installDir)) {
+            mkdir($installDir, 0755, true);
+        }
+        file_put_contents($installLockFile, date('Y-m-d H:i:s') . ' - Installation abgeschlossen');
     }
     
     // Nach der Finalisierung die Session-Variablen löschen

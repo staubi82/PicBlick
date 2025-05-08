@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(255) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
+    profile_image VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME DEFAULT NULL
 );
@@ -17,10 +18,13 @@ CREATE TABLE IF NOT EXISTS albums (
     user_id INT NOT NULL,
     path VARCHAR(255) NOT NULL,
     description TEXT DEFAULT NULL,
+    cover_image_id INT DEFAULT NULL,
+    parent_album_id INT DEFAULT NULL,
     is_public TINYINT DEFAULT 0,  -- 0 = privat, 1 = öffentlich
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME DEFAULT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (parent_album_id) REFERENCES albums(id),
     UNIQUE(user_id, name)
 );
 
