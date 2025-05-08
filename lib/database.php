@@ -241,9 +241,22 @@ class MySQLDatabase extends Database
 
     public function __construct()
     {
-        $this->db = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, DB_PORT);
+        // Host und Port extrahieren (für Abwärtskompatibilität)
+        $host = DB_HOST;
+        $port = DB_PORT;
+
+        // Falls der Host ein Port-Format enthält
+        if (strpos($host, ':') !== false) {
+            list($host, $customPort) = explode(':', $host, 2);
+            // Wenn ein numerischer Port in der Host-Angabe gefunden wurde, diesen verwenden
+            if (is_numeric($customPort)) {
+                $port = $customPort;
+            }
+        }
+
+        $this->db = new mysqli($host, DB_USER, DB_PASS, DB_NAME, $port);
         if ($this->db->connect_error) {
-            throw new Exception("MySQL-Verbindungsfehler: " . $this->db->connect_error);
+            throw new Exception("MySQL-Verbindungsfehler: " . $this->db->connect_error . " (Host: ".DB_HOST.", Port: ".DB_PORT.")");
         }
         $this->db->set_charset('utf8mb4');
     }
@@ -407,7 +420,20 @@ class PDOMySQLDatabase extends Database
     public function __construct()
     {
         try {
-            $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME . ';charset=utf8mb4';
+            // Prüfen, ob ein gültiger Host angegeben wurde
+            $host = DB_HOST;
+            $port = DB_PORT;
+
+            // Falls der Host ein Port-Format enthält (für Abwärtskompatibilität)
+            if (strpos($host, ':') !== false) {
+                list($host, $customPort) = explode(':', $host, 2);
+                // Wenn ein numerischer Port in der Host-Angabe gefunden wurde, diesen verwenden
+                if (is_numeric($customPort)) {
+                    $port = $customPort;
+                }
+            }
+
+            $dsn = 'mysql:host=' . $host . ';port=' . $port . ';dbname=' . DB_NAME . ';charset=utf8mb4';
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -415,7 +441,7 @@ class PDOMySQLDatabase extends Database
             ];
             $this->db = new PDO($dsn, DB_USER, DB_PASS, $options);
         } catch (PDOException $e) {
-            throw new Exception("PDO MySQL-Verbindungsfehler: " . $e->getMessage());
+            throw new Exception("PDO MySQL-Verbindungsfehler: " . $e->getMessage() . " (Host: ".DB_HOST.", Port: ".DB_PORT.")");
         }
     }
 

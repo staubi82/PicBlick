@@ -85,10 +85,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
             if (!extension_loaded('mysqli')) {
                 $error = "MySQL-Treiber (mysqli) wird nicht unterstützt: Die mysqli-Erweiterung ist nicht installiert. Bitte verwenden Sie SQLite, PDO MySQL oder installieren Sie die mysqli-Erweiterung.";
             } else {
+                // Host und Port extrahieren (für Abwärtskompatibilität)
+                $host = $dbHost;
+                $port = $dbPort;
+
+                // Falls jemand versehentlich "host:port" im Host-Feld eingibt
+                if (strpos($host, ':') !== false) {
+                    list($host, $customPort) = explode(':', $host, 2);
+                    // Wenn ein Port in der Host-Angabe gefunden wurde, diesen verwenden
+                    if (is_numeric($customPort)) {
+                        $port = $customPort;
+                    }
+                }
+
                 // Prüfe MySQL-Verbindung vor Weiterleitung
-                $mysqli = @new mysqli($dbHost, $dbUser, $dbPass, $dbName);
+                $mysqli = @new mysqli($host, $dbUser, $dbPass, $dbName, $port);
                 if ($mysqli->connect_error) {
-                    $error = "MySQL-Verbindungsfehler: " . $mysqli->connect_error;
+                    $error = "MySQL-Verbindungsfehler: " . $mysqli->connect_error .
+                             "<br>Server: $host, Port: $port, Datenbank: $dbName";
                 } else {
                     $mysqli->close();
                     header('Location: setup.php?step=finalize');
@@ -100,9 +114,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
             if (!extension_loaded('pdo_mysql')) {
                 $error = "PDO MySQL-Treiber wird nicht unterstützt: Die pdo_mysql-Erweiterung ist nicht installiert. Bitte verwenden Sie SQLite, mysqli oder installieren Sie die pdo_mysql-Erweiterung.";
             } else {
+                // Host und Port extrahieren (für Abwärtskompatibilität)
+                $host = $dbHost;
+                $port = $dbPort;
+
+                // Falls jemand versehentlich "host:port" im Host-Feld eingibt
+                if (strpos($host, ':') !== false) {
+                    list($host, $customPort) = explode(':', $host, 2);
+                    // Wenn ein Port in der Host-Angabe gefunden wurde, diesen verwenden
+                    if (is_numeric($customPort)) {
+                        $port = $customPort;
+                    }
+                }
+
                 // Prüfe PDO MySQL-Verbindung vor Weiterleitung
                 try {
-                    $dsn = 'mysql:host=' . $dbHost . ';dbname=' . $dbName . ';charset=utf8mb4';
+                    $dsn = 'mysql:host=' . $host . ';port=' . $port . ';dbname=' . $dbName . ';charset=utf8mb4';
                     $options = [
                         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -113,7 +140,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['db_type'])) {
                     header('Location: setup.php?step=finalize');
                     exit;
                 } catch (PDOException $e) {
-                    $error = "PDO MySQL-Verbindungsfehler: " . $e->getMessage();
+                    $error = "PDO MySQL-Verbindungsfehler: " . $e->getMessage() .
+                             "<br>DSN: mysql:host=$host;port=$port;dbname=$dbName";
                 }
             }
         }
