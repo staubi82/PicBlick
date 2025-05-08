@@ -5,43 +5,15 @@
  * Zeigt die Startseite mit Albenübersicht
  */
 
-// Fehlerausgabe aktivieren
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
 // Cache-Header setzen, um Browser-Caching zu verhindern
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-// Pfade dynamisch ermitteln
-$basePath = realpath(__DIR__ . '/..');
-
-// Prüfen, ob wir auf einem Hosting sind, wo die Verzeichnisstruktur anders sein könnte
-if (!file_exists($basePath . '/app/config.php')) {
-    // Alternative Pfade durchprobieren
-    $possiblePaths = [
-        // 1. Standard-Lokalpfad
-        realpath(__DIR__ . '/..'),
-        // 2. Hosting-Pfad im httpdocs-Verzeichnis
-        dirname(dirname($_SERVER['DOCUMENT_ROOT'])),
-        // 3. Direktes Elternverzeichnis des aktuellen Skripts
-        dirname(__DIR__)
-    ];
-    
-    foreach ($possiblePaths as $path) {
-        if (file_exists($path . '/app/config.php')) {
-            $basePath = $path;
-            break;
-        }
-    }
-}
-
 // Konfiguration und Bibliotheken laden
-require_once $basePath . '/app/config.php';
-require_once $basePath . '/lib/database.php';
-require_once $basePath . '/app/auth/auth.php';
+require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../lib/database.php';
+require_once __DIR__ . '/../app/auth/auth.php';
 
 // Authentifizierung initialisieren
 $auth = new Auth();

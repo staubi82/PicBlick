@@ -32,8 +32,19 @@ class Imaging
             }
         }
         
-        list($sourceWidth, $sourceHeight, $sourceType) = getimagesize($sourcePath);
+        // Bestimme Bildtyp
+        $sourceInfo = getimagesize($sourcePath);
+        if ($sourceInfo === false) {
+            error_log("Ungültiges Bildformat: $sourcePath");
+            return false;
+        }
         
+        $sourceType = $sourceInfo[2];
+        $sourceWidth = $sourceInfo[0];
+        $sourceHeight = $sourceInfo[1];
+        
+        // Lade Originalbild
+        $sourceImage = null;
         switch ($sourceType) {
             case IMAGETYPE_JPEG:
                 $sourceImage = imagecreatefromjpeg($sourcePath);
@@ -45,35 +56,38 @@ class Imaging
                 $sourceImage = imagecreatefromgif($sourcePath);
                 break;
             default:
-                return false; // Nicht unterstütztes Format
+                error_log("Nicht unterstütztes Bildformat: $sourcePath");
+                return false;
         }
         
         if (!$sourceImage) {
+            error_log("Fehler beim Laden des Bildes: $sourcePath");
             return false;
         }
         
+        // Berechne neue Dimensionen
         if ($crop) {
-            // Bild zuschneiden
+            // Variante 1: Zuschneiden, behält die angegebenen Dimensionen bei
             $aspectRatio = $sourceWidth / $sourceHeight;
-            $thumbRatio = $width / $height;
+            $thumbAspectRatio = $width / $height;
             
-            if ($aspectRatio > $thumbRatio) {
-                // Originalbild ist breiter
+            if ($aspectRatio >= $thumbAspectRatio) {
+                // Quellbild ist breiter - beschneide die Seiten
                 $newHeight = $sourceHeight;
-                $newWidth = $sourceHeight * $thumbRatio;
-                $cropX = ($sourceWidth - $newWidth) / 2;
-                $cropY = 0;
+                $newWidth = $newHeight * $thumbAspectRatio;
+                $srcX = ($sourceWidth - $newWidth) / 2;
+                $srcY = 0;
             } else {
-                // Originalbild ist höher
+                // Quellbild ist höher - beschneide oben/unten
                 $newWidth = $sourceWidth;
-                $newHeight = $sourceWidth / $thumbRatio;
-                $cropX = 0;
-                $cropY = ($sourceHeight - $newHeight) / 2;
+                $newHeight = $newWidth / $thumbAspectRatio;
+                $srcX = 0;
+                $srcY = ($sourceHeight - $newHeight) / 2;
             }
             
             $thumbImage = imagecreatetruecolor($width, $height);
             
-            // Transparenz für PNG beibehalten
+            // Behandlung für Transparenz bei PNG
             if ($sourceType === IMAGETYPE_PNG) {
                 imagealphablending($thumbImage, false);
                 imagesavealpha($thumbImage, true);
@@ -81,22 +95,32 @@ class Imaging
                 imagefilledrectangle($thumbImage, 0, 0, $width, $height, $transparent);
             }
             
-            imagecopyresampled($thumbImage, $sourceImage, 0, 0, (int)$cropX, (int)$cropY, (int)$width, (int)$height, (int)$newWidth, (int)$newHeight);
+            imagecopyresampled($thumbImage, $sourceImage, 0, 0, (int)$srcX, (int)$srcY, $width, $height, (int)$newWidth, (int)$newHeight);
         } else {
-            // Proportional skalieren
+            // Variante 2: Proportionales Skalieren, behält das Seitenverhältnis bei
             $aspectRatio = $sourceWidth / $sourceHeight;
             
-            if ($width / $height > $aspectRatio) {
-                $newWidth = $height * $aspectRatio;
-                $newHeight = $height;
+            if ($sourceWidth > $sourceHeight) {
+                $newWidth = (int)$width;
+                $newHeight = (int)($newWidth / $aspectRatio);
+                
+                if ($newHeight > $height) {
+                    $newHeight = $height;
+                    $newWidth = intval($newHeight * $aspectRatio);
+                }
             } else {
-                $newHeight = $width / $aspectRatio;
-                $newWidth = $width;
+                $newHeight = $height;
+                $newWidth = intval($newHeight * $aspectRatio);
+                
+                if ($newWidth > $width) {
+                    $newWidth = $width;
+                    $newHeight = intval($newWidth / $aspectRatio);
+                }
             }
             
             $thumbImage = imagecreatetruecolor($newWidth, $newHeight);
             
-            // Transparenz für PNG beibehalten
+            // Behandlung für Transparenz bei PNG
             if ($sourceType === IMAGETYPE_PNG) {
                 imagealphablending($thumbImage, false);
                 imagesavealpha($thumbImage, true);
@@ -128,6 +152,7 @@ class Imaging
         if (!$success && file_exists($sourcePath)) {
             copy($sourcePath, $destPath);
             error_log("Thumbnail-Generierung fehlgeschlagen, verwende Original: $sourcePath");
+            $success = true;
         }
         
         imagedestroy($sourceImage);
@@ -137,43 +162,48 @@ class Imaging
     }
     
     /**
-     * Bereinigt EXIF-Daten aus einem Bild falls aktiviert
+     * Rotiert ein Bild basierend auf EXIF-Daten
      * 
      * @param string $imagePath Pfad zum Bild
-     * @return bool true bei Erfolg, false bei Fehler
+     * @return bool Erfolg/Misserfolg
      */
-    public static function stripExif($imagePath)
+    public static function autoRotateImage($imagePath)
     {
-        if (!STRIP_EXIF || !file_exists($imagePath)) {
+        if (!function_exists('exif_read_data') || !file_exists($imagePath)) {
             return false;
         }
         
-        // Prüfen ob die exif-Erweiterung verfügbar ist
-        if (!function_exists('exif_imagetype')) {
-            // Fallback: Bildtyp anhand der Dateiendung bestimmen
-            $extension = strtolower(pathinfo($imagePath, PATHINFO_EXTENSION));
-            $isJpeg = in_array($extension, ['jpg', 'jpeg']);
-        } else {
-            // EXIF-Funktion ist verfügbar
-            $imageType = exif_imagetype($imagePath);
-            $isJpeg = ($imageType === IMAGETYPE_JPEG);
-        }
-        
-        // Funktioniert nur für JPEG
-        if (!$isJpeg) {
+        $exif = @exif_read_data($imagePath);
+        if (!$exif || !isset($exif['Orientation'])) {
             return false;
         }
         
-        $image = imagecreatefromjpeg($imagePath);
-        if (!$image) {
-            return false;
+        $orientation = $exif['Orientation'];
+        $rotationNeeded = false;
+        $degrees = 0;
+        
+        switch ($orientation) {
+            case 3:
+                $degrees = 180;
+                $rotationNeeded = true;
+                break;
+            case 6:
+                $degrees = 270;
+                $rotationNeeded = true;
+                break;
+            case 8:
+                $degrees = 90;
+                $rotationNeeded = true;
+                break;
+            default:
+                return true; // Keine Rotation notwendig
         }
         
-        // Speichere ohne EXIF
-        $success = imagejpeg($image, $imagePath, 100); // Originale Qualität beibehalten
-        imagedestroy($image);
+        if ($rotationNeeded) {
+            return self::rotateImage($imagePath, $degrees);
+        }
         
-        return $success;
+        return true;
     }
     
     /**
@@ -218,85 +248,34 @@ class Imaging
                 return false;
             }
             
-            // Bild rotieren (Winkel muss negativ sein für den Uhrzeigersinn)
-            $rotated = imagerotate($image, -$rotation, 0);
+            // Rotieren
+            $rotatedImage = imagerotate($image, $rotation, 0);
             
-            if (!$rotated) {
-                imagedestroy($image);
-                return false;
-            }
-            
-            // Bild speichern
-            $success = false;
+            // Speichern
+            $result = false;
             switch ($extension) {
                 case 'jpg':
                 case 'jpeg':
-                    $success = imagejpeg($rotated, $imagePath, 95);
+                    $result = imagejpeg($rotatedImage, $imagePath, 95);
                     break;
                 case 'png':
-                    $success = imagepng($rotated, $imagePath, 9);
+                    $result = imagepng($rotatedImage, $imagePath, 0);
                     break;
                 case 'gif':
-                    $success = imagegif($rotated, $imagePath);
+                    $result = imagegif($rotatedImage, $imagePath);
                     break;
             }
             
-            // Speicher freigeben
+            // Ressourcen freigeben
             imagedestroy($image);
-            imagedestroy($rotated);
+            imagedestroy($rotatedImage);
             
-            return $success;
+            return $result;
+            
         } catch (Exception $e) {
+            error_log("Fehler beim Rotieren des Bildes: " . $e->getMessage());
             return false;
         }
-    }
-    
-    /**
-     * Rotiert ein Bild basierend auf EXIF-Orientierung
-     * 
-     * @param string $imagePath Pfad zum Bild
-     * @return bool true bei Erfolg, false bei Fehler
-     */
-    public static function autoRotateImage($imagePath)
-    {
-        // Prüfen ob die exif-Erweiterung verfügbar ist
-        if (!function_exists('exif_read_data') || !file_exists($imagePath)) {
-            return false;
-        }
-        
-        try {
-            $exif = @exif_read_data($imagePath);
-        } catch (Exception $e) {
-            return false;
-        }
-        
-        if (!$exif || !isset($exif['Orientation'])) {
-            return true; // Keine Rotation nötig
-        }
-        
-        $orientation = $exif['Orientation'];
-        if ($orientation == 1) {
-            return true; // Bereits korrekt ausgerichtet
-        }
-        
-        $image = imagecreatefromjpeg($imagePath);
-        
-        switch ($orientation) {
-            case 3:
-                $image = imagerotate($image, 180, 0);
-                break;
-            case 6:
-                $image = imagerotate($image, -90, 0);
-                break;
-            case 8:
-                $image = imagerotate($image, 90, 0);
-                break;
-        }
-        
-        $success = imagejpeg($image, $imagePath, 100);
-        imagedestroy($image);
-        
-        return $success;
     }
     
     /**
@@ -332,71 +311,58 @@ class Imaging
             return [];
         }
         
-        // Extrahiere relevante Metadaten
         $metadata = [];
         
-        // Kamera-Informationen
-        if (isset($exif['IFD0']['Make'])) {
-            $metadata['camera_make'] = $exif['IFD0']['Make'];
-        }
+        // Grundlegende EXIF-Daten extrahieren
+        if (isset($exif['COMPUTED']['Width'])) $metadata['width'] = $exif['COMPUTED']['Width'];
+        if (isset($exif['COMPUTED']['Height'])) $metadata['height'] = $exif['COMPUTED']['Height'];
         
-        if (isset($exif['IFD0']['Model'])) {
-            $metadata['camera_model'] = $exif['IFD0']['Model'];
-        }
-        
-        // Aufnahme-Einstellungen
-        if (isset($exif['EXIF']['ExposureTime'])) {
-            $metadata['exposure'] = $exif['EXIF']['ExposureTime'];
-        }
-        
-        if (isset($exif['EXIF']['FNumber'])) {
-            $metadata['aperture'] = 'f/' . $exif['EXIF']['FNumber'];
-        }
-        
-        if (isset($exif['EXIF']['ISOSpeedRatings'])) {
-            $metadata['iso'] = $exif['EXIF']['ISOSpeedRatings'];
-        }
-        
-        if (isset($exif['EXIF']['FocalLength'])) {
-            $metadata['focal_length'] = $exif['EXIF']['FocalLength'] . 'mm';
-        }
-        
-        // Aufnahmedatum
+        // Zeitstempel der Aufnahme
         if (isset($exif['EXIF']['DateTimeOriginal'])) {
             $metadata['date_taken'] = $exif['EXIF']['DateTimeOriginal'];
+        } elseif (isset($exif['IFD0']['DateTime'])) {
+            $metadata['date_taken'] = $exif['IFD0']['DateTime'];
+        } else {
+            $metadata['date_taken'] = date('Y-m-d H:i:s', filemtime($imagePath));
         }
         
-        // GPS-Koordinaten (falls vorhanden)
-        if (isset($exif['GPS']) && isset($exif['GPS']['GPSLatitude']) && isset($exif['GPS']['GPSLongitude'])) {
-            $metadata['gps'] = self::formatGpsCoordinates($exif['GPS']);
+        // Kameradaten
+        if (isset($exif['IFD0']['Make'])) $metadata['camera_make'] = $exif['IFD0']['Make'];
+        if (isset($exif['IFD0']['Model'])) $metadata['camera_model'] = $exif['IFD0']['Model'];
+        
+        // GPS-Daten
+        $gpsData = self::extractGpsData($exif);
+        if ($gpsData) {
+            $metadata['gps'] = $gpsData;
         }
         
         return $metadata;
     }
     
     /**
-     * Formatiert GPS-Koordinaten aus EXIF-Daten
+     * Extrahiert GPS-Daten aus EXIF-Metadaten
      * 
-     * @param array $gpsData GPS-EXIF-Daten
-     * @return array Formatierte GPS-Daten
+     * @param array $exif EXIF-Daten
+     * @return array|bool GPS-Daten oder false
      */
-    private static function formatGpsCoordinates($gpsData)
+    private static function extractGpsData($exif)
     {
-        if (!isset($gpsData['GPSLatitude']) || !isset($gpsData['GPSLongitude'])) {
-            return null;
+        if (!isset($exif['GPS']) || empty($exif['GPS'])) {
+            return false;
         }
         
-        $latParts = $gpsData['GPSLatitude'];
-        $latRef = isset($gpsData['GPSLatitudeRef']) ? $gpsData['GPSLatitudeRef'] : 'N';
+        // Prüfen, ob die grundlegenden GPS-Daten vorhanden sind
+        if (!isset($exif['GPS']['GPSLatitude']) || !isset($exif['GPS']['GPSLongitude']) ||
+            !isset($exif['GPS']['GPSLatitudeRef']) || !isset($exif['GPS']['GPSLongitudeRef'])) {
+            return false;
+        }
         
-        $longParts = $gpsData['GPSLongitude'];
-        $longRef = isset($gpsData['GPSLongitudeRef']) ? $gpsData['GPSLongitudeRef'] : 'E';
+        $lat = self::convertGpsToDecimal($exif['GPS']['GPSLatitude']);
+        $long = self::convertGpsToDecimal($exif['GPS']['GPSLongitude']);
         
-        $lat = self::convertGpsToDecimal($latParts);
-        $lat = ($latRef == 'S') ? -$lat : $lat;
-        
-        $long = self::convertGpsToDecimal($longParts);
-        $long = ($longRef == 'W') ? -$long : $long;
+        // Referenz berücksichtigen (N/S, E/W)
+        if ($exif['GPS']['GPSLatitudeRef'] == 'S') $lat = -$lat;
+        if ($exif['GPS']['GPSLongitudeRef'] == 'W') $long = -$long;
         
         return [
             'latitude' => $lat,
@@ -429,14 +395,13 @@ class Imaging
     /**
      * Konvertiert EXIF-Rationalwerte ins Dezimalformat
      * 
-     * @param string $rational Rationalwert (z.B. "1/100")
+     * @param string $rational Rational-Wert im Format "A/B"
      * @return float Dezimalwert
      */
     private static function convertToDecimal($rational)
     {
-        $parts = explode('/', $rational);
-        if (count($parts) == 1) {
-            return floatval($parts[0]);
+        if (!is_array($rational) && preg_match('/(\d+)\/(\d+)/', $rational, $parts)) {
+            return intval($parts[1]) / intval($parts[2]);
         }
         if (count($parts) == 2 && intval($parts[1]) != 0) {
             return intval($parts[0]) / intval($parts[1]);
@@ -489,11 +454,13 @@ class Imaging
         exec($cmd, $output, $returnCode);
         
         if ($returnCode !== 0 || empty($output)) {
-            error_log("Fehler beim Ermitteln der Videolänge: " . implode("\n", $output));
+            error_log("Fehler beim Ermitteln der Videolänge: " . implode(" ", $output));
             return false;
         }
         
-        return floatval(trim($output[0]));
+        // Versuche die Ausgabe als Float zu parsen
+        $duration = (float)trim($output[0]);
+        return ($duration > 0) ? $duration : false;
     }
     
     /**
@@ -528,25 +495,18 @@ class Imaging
         } elseif ($duration < $framePos) {
             // Wenn das Video kürzer als der gewünschte Frame ist, nehme die Hälfte der Videolänge
             $newFramePos = max(0, $duration / 2);
-            error_log("Video ist kürzer als {$framePos}s (tatsächlich: {$duration}s), verwende Frame bei {$newFramePos}s");
+            error_log("Video ist kürzer als {$framePos}s, verwende Frame bei {$newFramePos}s");
             $framePos = $newFramePos;
         }
         
-        // Stelle sicher, dass der Zielordner existiert
-        $destDir = dirname($destPath);
-        if (!file_exists($destDir)) {
-            if (!mkdir($destDir, 0755, true) && !is_dir($destDir)) {
-                error_log("Konnte Zielverzeichnis nicht erstellen: $destDir");
-                return false;
-            }
-        }
-
-        // Temporäre Datei für den Frame
-        $tempFramePath = sys_get_temp_dir() . '/' . uniqid('frame_') . '.jpg';
+        // Temporärer Pfad für den extrahierten Frame
+        $tempFramePath = tempnam(sys_get_temp_dir(), 'vtmp_') . '.jpg';
         
         // FFmpeg-Befehl zum Extrahieren eines Frames
-        $ffmpegCmd = "ffmpeg -i " . escapeshellarg($sourcePath) . " -ss " . floatval($framePos) .
-                     " -frames:v 1 -q:v 2 " . escapeshellarg($tempFramePath) . " 2>&1";
+        $ffmpegCmd = sprintf('ffmpeg -i %s -ss %f -vframes 1 -f image2 -y %s 2>&1',
+                          escapeshellarg($sourcePath),
+                          $framePos,
+                          escapeshellarg($tempFramePath));
         
         // FFmpeg ausführen
         $output = [];
