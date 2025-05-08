@@ -16,8 +16,25 @@ $userId = $currentUser ? $currentUser['id'] : null;
 // Datenbank initialisieren
 $db = Database::getInstance();
 
-// Album-ID prüfen
+// Request-Parameter verarbeiten
 $albumId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+$subOrder = isset($_GET['sub_sort']) ? $_GET['sub_sort'] : 'name';
+$imgOrder = isset($_GET['img_sort']) ? $_GET['img_sort'] : 'upload_date';
+$imgDir = isset($_GET['img_dir']) ? $_GET['img_dir'] : 'DESC';
+
+// Whitelist für Sortierparameter
+$allowedSubOrders = ['name' => 'a.name', 'date' => 'a.created_at'];
+$allowedImgOrders = [
+    'upload_date' => 'i.upload_date',
+    'name' => 'i.filename',
+    'type' => 'CASE WHEN i.mime_type LIKE "image/%" THEN 1 ELSE 2 END'
+];
+$allowedDirections = ['ASC', 'DESC'];
+
+// Parameter validieren
+$subOrderColumn = $allowedSubOrders[$subOrder] ?? 'a.name';
+$imgOrderColumn = $allowedImgOrders[$imgOrder] ?? 'i.upload_date';
+$imgOrderDirection = in_array(strtoupper($imgDir), $allowedDirections) ? strtoupper($imgDir) : 'DESC';
 
 if ($albumId <= 0) {
     header('Content-Type: application/json');
@@ -52,7 +69,7 @@ $subAlbums = $db->fetchAll(
      LEFT JOIN images i ON a.cover_image_id = i.id
      WHERE a.parent_album_id = :album_id
      AND a.deleted_at IS NULL
-     ORDER BY a.name ASC",
+     ORDER BY " . $subOrderColumn . " ASC",
     ['album_id' => $albumId]
 );
 
@@ -60,10 +77,12 @@ $subAlbums = $db->fetchAll(
 $images = $db->fetchAll(
     "SELECT i.*,
      (SELECT COUNT(*) FROM favorites WHERE image_id = i.id AND user_id = :user_id) > 0 AS is_favorite,
-     COALESCE(i.description, '') as description
+     COALESCE(i.description, '') as description,
+     COALESCE(i.mime_type, 'image/jpeg') as mime_type,
+     CASE WHEN i.mime_type LIKE 'video/%' THEN 'video' ELSE 'image' END as media_type
      FROM images i
      WHERE i.album_id = :album_id AND i.deleted_at IS NULL
-     ORDER BY i.upload_date DESC",
+     ORDER BY " . $imgOrderColumn . " " . $imgOrderDirection,
     [
         'album_id' => $albumId,
         'user_id' => $userId ?? 0
@@ -136,7 +155,9 @@ foreach ($images as $image) {
         'rotation' => $image['rotation'] ?? 0,
         'is_public' => (bool)$image['is_public'],
         'thumbnail_url' => $thumbnailUrl,
-        'full_url' => $fullImageUrl
+        'full_url' => $fullImageUrl,
+        'mime_type' => $image['mime_type'] ?? 'image/jpeg',
+        'media_type' => $image['media_type'] ?? 'image'
     ];
 }
 

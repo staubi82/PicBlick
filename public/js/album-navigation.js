@@ -5,6 +5,7 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     initAlbumNavigation();
+    initSortControlsNew(); // Initialisierung des neuen Sortier-Menüs
 });
 
 /**
@@ -117,8 +118,9 @@ function slideToAlbum(albumId, isBackNavigation = false, customCoverPath = null)
     if (subalbumSwiper) subalbumSwiper.classList.add('fade-out');
     if (imageGrid) imageGrid.classList.add('fade-out');
     
-    // 3. AJAX-Anfrage für neue Album-Daten
-    fetch(`../app/api/get-album-data.php?id=${albumId}`)
+    // 3. AJAX-Anfrage für neue Album-Daten mit Sortierparametern
+    const sortParams = getSortParameters();
+    fetch(`../app/api/get-album-data.php?id=${albumId}${sortParams}`)
         .then(response => response.json())
         .then(albumData => {
             if (albumData.error) {
@@ -321,11 +323,32 @@ function updateImagesGrid(gridElement, images, isOwner) {
         card.dataset.rotation = image.rotation;
         card.dataset.description = image.description;
         
+        // Wichtig: Medientyp setzen für Videos
+        const isVideo = image.media_type === 'video';
+        card.dataset.mediaType = image.media_type || 'image';
+        card.dataset.mimeType = image.mime_type || 'image/jpeg';
+        
+        let mediaHTML = '';
+        if (isVideo) {
+            mediaHTML = `
+                <div class="video-thumbnail">
+                    <img src="${image.thumbnail_url}"
+                         alt="${escapeHtml(image.filename)}"
+                         onerror="this.onerror=null;this.src='/public/img/default-video-thumb.png';">
+                    <div class="video-play-icon">▶</div>
+                </div>
+            `;
+        } else {
+            mediaHTML = `
+                <img src="${image.thumbnail_url}"
+                     alt="${escapeHtml(image.filename)}"
+                     onerror="this.onerror=null;this.src='/public/img/default-album.jpg';"
+                     style="--rotation: ${image.rotation}deg;">
+            `;
+        }
+        
         card.innerHTML = `
-            <img src="${image.thumbnail_url}" 
-                 alt="${escapeHtml(image.filename)}" 
-                 onerror="this.onerror=null;this.src='/public/img/default-album.jpg';"
-                 style="--rotation: ${image.rotation}deg;">
+            ${mediaHTML}
             
             <div class="image-overlay">
                 <div class="image-actions">
@@ -392,4 +415,146 @@ function escapeHtml(unsafe) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+/**
+ * Initialisiert die neuen Sortierkontrollen mit Dropdown-Menü
+ */
+function initSortControlsNew() {
+    console.log("Initialisiere Sortierkontrollen...");
+    
+    // Button zum Öffnen des Sortier-Dropdowns
+    const sortButton = document.getElementById('sort-album-toggle');
+    const sortDropdown = document.getElementById('sort-dropdown');
+    const closeButton = document.getElementById('close-sort-dropdown');
+    const applyButton = document.getElementById('apply-sort');
+    
+    // Überprüfe, ob die Elemente existieren und gib Debugmeldungen aus
+    console.log("Sort Button gefunden:", sortButton !== null);
+    console.log("Sort Dropdown gefunden:", sortDropdown !== null);
+    
+    if (!sortButton) {
+        console.error("Sort Button nicht gefunden!");
+        return;
+    }
+    
+    if (!sortDropdown) {
+        console.error("Sort Dropdown nicht gefunden!");
+        return;
+    }
+    
+    // Radio-Buttons für Sortiertyp und -richtung
+    const sortTypeRadios = document.querySelectorAll('input[name="sort-type"]');
+    const sortDirectionRadios = document.querySelectorAll('input[name="sort-direction"]');
+    
+    // Label-Elemente für Sortierrichtung
+    const sortAscLabel = document.getElementById('sort-asc-label');
+    const sortDescLabel = document.getElementById('sort-desc-label');
+    
+    // Dropdown öffnen/schließen mit verbessertem Event-Listener
+    sortButton.addEventListener('click', function(e) {
+        console.log("Sort Button wurde geklickt");
+        e.preventDefault();
+        e.stopPropagation();
+        sortDropdown.classList.toggle('active');
+    });
+    
+    // Dropdown schließen bei Klick auf Abbrechen
+    if (closeButton) {
+        closeButton.addEventListener('click', function() {
+            sortDropdown.classList.remove('active');
+        });
+    }
+    
+    // Dropdown schließen bei Klick außerhalb
+    document.addEventListener('click', function(e) {
+        if (sortDropdown.classList.contains('active') &&
+            !sortDropdown.contains(e.target) &&
+            e.target !== sortButton &&
+            !sortButton.contains(e.target)) {
+            sortDropdown.classList.remove('active');
+        }
+    });
+    
+    // Beschriftungen der Sortierrichtung je nach gewähltem Sortiertyp anpassen
+    sortTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            updateSortDirectionLabels(this.value);
+        });
+    });
+    
+    // Sortierung anwenden
+    if (applyButton) {
+        applyButton.addEventListener('click', function() {
+            applySorting();
+            sortDropdown.classList.remove('active');
+        });
+    }
+    
+    // Initial einmal die Labels aktualisieren
+    const selectedSortType = document.querySelector('input[name="sort-type"]:checked');
+    if (selectedSortType) {
+        updateSortDirectionLabels(selectedSortType.value);
+    }
+}
+
+/**
+ * Labels für Sortierrichtung aktualisieren
+ */
+function updateSortDirectionLabels(sortType) {
+    const sortAscLabel = document.getElementById('sort-asc-label');
+    const sortDescLabel = document.getElementById('sort-desc-label');
+    
+    if (!sortAscLabel || !sortDescLabel) return;
+    
+    if (sortType === 'name') {
+        sortAscLabel.textContent = 'A bis Z';
+        sortDescLabel.textContent = 'Z bis A';
+    } else if (sortType === 'type') {
+        sortAscLabel.textContent = 'Bilder zuerst';
+        sortDescLabel.textContent = 'Videos zuerst';
+    } else {
+        sortAscLabel.textContent = 'Älteste zuerst';
+        sortDescLabel.textContent = 'Neueste zuerst';
+    }
+}
+
+/**
+ * Sortiereinstellungen anwenden und Album neu laden
+ */
+function applySorting() {
+    // Ausgewählten Sortiertyp ermitteln
+    const sortTypeRadio = document.querySelector('input[name="sort-type"]:checked');
+    const sortDirectionRadio = document.querySelector('input[name="sort-direction"]:checked');
+    
+    if (!sortTypeRadio || !sortDirectionRadio) return;
+    
+    // Aktuelles Album mit den neuen Sortierparametern neu laden
+    reloadCurrentAlbum();
+}
+
+/**
+ * Aktuelles Album mit den ausgewählten Sortieroptionen neu laden
+ */
+function reloadCurrentAlbum() {
+    const currentAlbumId = getCurrentAlbumId();
+    if (currentAlbumId) {
+        // Animation starten, aber mit "in-place" Option (keine Navigation)
+        slideToAlbum(currentAlbumId, true);
+    }
+}
+
+/**
+ * Aktuelle Sortierparameter als URL-Query-String abrufen
+ */
+function getSortParameters() {
+    const sortTypeRadio = document.querySelector('input[name="sort-type"]:checked');
+    const sortDirectionRadio = document.querySelector('input[name="sort-direction"]:checked');
+    
+    if (!sortTypeRadio || !sortDirectionRadio) return '';
+    
+    const imgSort = sortTypeRadio.value;
+    const imgDir = sortDirectionRadio.value;
+    
+    return `&img_sort=${imgSort}&img_dir=${imgDir}`;
 }

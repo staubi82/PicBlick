@@ -69,6 +69,15 @@ function initFullscreenViewer() {
     let lastY = 0;
     
     // Event-Listener für Medienklicks in der Galerie
+    // Zuerst alte Event-Listener entfernen, indem wir alle Event-Handler neu zuweisen
+    document.querySelectorAll('.image-grid .image-card').forEach((card) => {
+        // Alten Listener entfernen, indem wir ein neues Element klonen und ersetzen
+        // Dies ist notwendig, da wir keine direkte Möglichkeit haben, anonyme Event-Listener zu entfernen
+        const newCard = card.cloneNode(true);
+        card.parentNode.replaceChild(newCard, card);
+    });
+    
+    // Neue Event-Listener hinzufügen
     document.querySelectorAll('.image-grid .image-card').forEach((card, index) => {
         card.addEventListener('click', (e) => {
             // Ignoriere Klicks auf Action-Buttons innerhalb der Karte
@@ -82,12 +91,18 @@ function initFullscreenViewer() {
             currentImages = allMedia.map(mediaCard => {
                 const rotation = parseInt(mediaCard.dataset.rotation || '0', 10);
                 
-                // Bestimme Medientyp (Video oder Bild)
-                const isVideo = mediaCard.querySelector('.video-thumbnail') !== null;
+                // Bestimme Medientyp (Video oder Bild) aus den data-Attributen
+                // Wir verwenden mehrere Wege, um den Typ zu erkennen, für mehr Robustheit
+                const hasVideoThumbnail = mediaCard.querySelector('.video-thumbnail') !== null;
+                const isVideoByType = mediaCard.dataset.mediaType === 'video';
+                const isVideoByMime = (mediaCard.dataset.mimeType || '').startsWith('video/');
+                const isVideo = hasVideoThumbnail || isVideoByType || isVideoByMime;
                 
-                // Ermittle MIME-Typ für Videos
-                let mimeType = 'video/mp4'; // Standard-Fallback
-                if (isVideo) {
+                // Ermittle MIME-Typ für Videos - nutze das data-Attribut wenn vorhanden
+                let mimeType = mediaCard.dataset.mimeType || 'video/mp4'; // Wert aus dem data-Attribut
+                
+                // Fallback zur Extension-basierten Erkennung, wenn kein MIME-Typ gefunden wurde
+                if (isVideo && !mimeType.startsWith('video/')) {
                     const filename = mediaCard.dataset.imageName || '';
                     const extension = filename.split('.').pop().toLowerCase();
                     const mimeMap = {
