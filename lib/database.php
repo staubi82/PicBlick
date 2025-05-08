@@ -243,6 +243,7 @@ class SQLiteDatabase extends Database
         $sql = file_get_contents($filename);
         $statements = explode(';', $sql);
         
+        // Keine Transaktion verwenden, jedes Statement einzeln ausführen
         foreach ($statements as $statement) {
             $statement = trim($statement);
             if (!empty($statement)) {
@@ -428,22 +429,19 @@ class MySQLDatabase extends Database
         $sql = file_get_contents($filename);
         $statements = explode(';', $sql);
         
-        $this->db->begin_transaction();
-        
-        try {
-            foreach ($statements as $statement) {
-                $statement = trim($statement);
-                if (!empty($statement)) {
+        // Keine Transaktion verwenden, jedes Statement einzeln ausführen
+        foreach ($statements as $statement) {
+            $statement = trim($statement);
+            if (!empty($statement)) {
+                try {
                     $this->db->query($statement);
+                } catch (Exception $e) {
+                    throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage() . " (Statement: $statement)");
                 }
             }
-            
-            $this->db->commit();
-            return true;
-        } catch (Exception $e) {
-            $this->db->rollback();
-            throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage());
         }
+        
+        return true;
     }
 
     public function lastError()
@@ -669,22 +667,19 @@ class PDOMySQLDatabase extends Database
         $sql = file_get_contents($filename);
         $statements = explode(';', $sql);
         
-        $this->db->beginTransaction();
-        
-        try {
-            foreach ($statements as $statement) {
-                $statement = trim($statement);
-                if (!empty($statement)) {
+        // Keine Transaktion verwenden, jedes Statement einzeln ausführen
+        foreach ($statements as $statement) {
+            $statement = trim($statement);
+            if (!empty($statement)) {
+                try {
                     $this->db->exec($statement);
+                } catch (Exception $e) {
+                    throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage() . " (Statement: $statement)");
                 }
             }
-            
-            $this->db->commit();
-            return true;
-        } catch (PDOException $e) {
-            $this->db->rollBack();
-            throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage());
         }
+        
+        return true;
     }
 }
 
@@ -880,21 +875,18 @@ class PDOSQLiteDatabase extends Database
         $sql = file_get_contents($filename);
         $statements = explode(';', $sql);
         
-        $this->db->beginTransaction();
-        
-        try {
-            foreach ($statements as $statement) {
-                $statement = trim($statement);
-                if (!empty($statement)) {
+        // Keine Transaktion verwenden, jedes Statement einzeln ausführen
+        foreach ($statements as $statement) {
+            $statement = trim($statement);
+            if (!empty($statement)) {
+                try {
                     $this->db->exec($statement);
+                } catch (Exception $e) {
+                    throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage() . " (Statement: $statement)");
                 }
             }
-            
-            $this->db->commit();
-            return true;
-        } catch (PDOException $e) {
-            $this->db->rollBack();
-            throw new Exception("Fehler beim Ausführen des SQL-Statements: " . $e->getMessage());
         }
+        
+        return true;
     }
 }

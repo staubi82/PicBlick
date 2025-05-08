@@ -63,14 +63,14 @@ CREATE TABLE IF NOT EXISTS image_metadata (
     FOREIGN KEY (image_id) REFERENCES images(id)
 );
 
--- Indizes
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-CREATE INDEX IF NOT EXISTS idx_albums_user_id ON albums(user_id);
-CREATE INDEX IF NOT EXISTS idx_albums_is_public ON albums(is_public);
-CREATE INDEX IF NOT EXISTS idx_images_album_id ON images(album_id);
-CREATE INDEX IF NOT EXISTS idx_images_is_public ON images(is_public);
-CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
-CREATE INDEX IF NOT EXISTS idx_favorites_image_id ON favorites(image_id);
+-- Indizes (in MySQL ist die Syntax etwas anders als in SQLite)
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_albums_user_id ON albums(user_id);
+CREATE INDEX idx_albums_is_public ON albums(is_public);
+CREATE INDEX idx_images_album_id ON images(album_id);
+CREATE INDEX idx_images_is_public ON images(is_public);
+CREATE INDEX idx_favorites_user_id ON favorites(user_id);
+CREATE INDEX idx_favorites_image_id ON favorites(image_id);
 
 -- Views für aktive (nicht gelöschte) Einträge
 CREATE OR REPLACE VIEW active_users AS
