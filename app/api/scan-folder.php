@@ -59,10 +59,10 @@ foreach ($files as $file) {
     if ($type === 'directory') {
         // Es ist ein Unterordner
         $subFolders[] = $file;
-    } else if (in_array($type, ['image/jpeg', 'image/png', 'image/gif'])) {
+    } else if (in_array($type, ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/tiff'])) {
         // Es ist ein Bild
         $imageFiles[] = $file;
-    } else if (in_array($type, ['video/mp4', 'video/webm', 'video/ogg'])) {
+    } else if (in_array($type, ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'])) {
         // Es ist ein Video
         $imageFiles[] = $file; // Wir verwenden weiterhin imageFiles, da die DB-Tabelle erweitert wurde
     }

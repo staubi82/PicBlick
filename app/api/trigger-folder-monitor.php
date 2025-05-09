@@ -19,9 +19,19 @@ $db = Database::getInstance();
 // Die Logik aus monitor-user-folders.php hier als Funktion auslagern
 function monitorUserFolders($db) {
     define('USER_STORAGE_PATH', STORAGE_PATH . '/users');
-    define('SUPPORTED_IMAGE_TYPES', ['jpg', 'jpeg', 'png', 'gif']);
-    define('SUPPORTED_VIDEO_TYPES', ['mp4', 'mov', 'avi', 'mkv', 'webm']);
+    define('SUPPORTED_IMAGE_TYPES', ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff']);
+    define('SUPPORTED_VIDEO_TYPES', ['mp4', 'mov', 'avi', 'mkv', 'webm', 'ogg']);
     define('SUPPORTED_MEDIA_TYPES', array_merge(SUPPORTED_IMAGE_TYPES, SUPPORTED_VIDEO_TYPES));
+    
+    // Debug-Modus für ausführliche Protokollierung
+    define('DEBUG_LOG', true);
+    
+    // Logging-Funktion
+    function logMonitor($message) {
+        if (DEBUG_LOG) {
+            error_log("[Folder-Monitor] " . $message);
+        }
+    }
 
     // Funktion: Prüft, ob ein Ordner bereits als Album existiert
     function albumExists($userId, $folderName, $db) {
@@ -62,13 +72,16 @@ function monitorUserFolders($db) {
             'jpeg' => 'image/jpeg',
             'png' => 'image/png',
             'gif' => 'image/gif',
+            'bmp' => 'image/bmp',
+            'tiff' => 'image/tiff',
             
             // Videos
             'mp4' => 'video/mp4',
             'mov' => 'video/quicktime',
             'avi' => 'video/x-msvideo',
             'mkv' => 'video/x-matroska',
-            'webm' => 'video/webm'
+            'webm' => 'video/webm',
+            'ogg' => 'video/ogg'
         ];
         
         return isset($mimeTypes[$extension]) ? $mimeTypes[$extension] : 'application/octet-stream';
@@ -77,161 +90,219 @@ function monitorUserFolders($db) {
     // Funktion: Importiert Medien aus einem Ordner in ein Album
     // Optional: Rekursiver Import von Unterordnern (mit Unteralben-Erstellung)
     function importImagesFromFolder($albumId, $folderPath, $albumPath, $db, $userId = null, $scanSubFolders = true) {
-        $files = scandir($folderPath);
-        foreach ($files as $file) {
-            // Überspringe . und ..
-            if ($file === '.' || $file === '..') {
-                continue;
+        logMonitor("Verarbeite Ordner: $folderPath (Album-ID: $albumId)");
+        
+        if (!is_dir($folderPath)) {
+            logMonitor("Fehler: Pfad existiert nicht oder ist kein Verzeichnis: $folderPath");
+            return [0, 0]; // [importierte Dateien, Unterordner]
+        }
+        
+        $importCount = 0;
+        $subFolderCount = 0;
+        
+        try {
+            $files = scandir($folderPath);
+            
+            if ($files === false) {
+                logMonitor("Fehler: Konnte Verzeichnis nicht lesen: $folderPath");
+                return [0, 0];
             }
             
-            $sourcePath = $folderPath . '/' . $file;
-            
-            // Wenn es ein Ordner ist und rekursiver Import aktiviert ist
-            if (is_dir($sourcePath) && $scanSubFolders) {
-                // Erstelle ein Unteralbum
-                $subAlbumPath = $albumPath . '/' . $file;
+            foreach ($files as $file) {
+                // Überspringe . und ..
+                if ($file === '.' || $file === '..') {
+                    continue;
+                }
                 
-                // Prüfe, ob dieses Unteralbum bereits existiert
-                $subAlbum = $db->fetchOne('SELECT * FROM albums WHERE path = :path AND deleted_at IS NULL', [
-                    'path' => $subAlbumPath
-                ]);
+                $sourcePath = $folderPath . '/' . $file;
                 
-                // Wenn das Unteralbum noch nicht existiert, erstelle es
-                if (!$subAlbum) {
-                    // Statt direkt einzufügen, createAlbum verwenden, um Duplikate zu vermeiden
-                    // Wichtig: Hier übergeben wir die albumId als parentAlbumId
-                    $subAlbumId = createAlbum($userId, $subAlbumPath, $file, $db, $albumId);
+                // Wenn es ein Ordner ist und rekursiver Import aktiviert ist
+                if (is_dir($sourcePath) && $scanSubFolders) {
+                    logMonitor("Unterordner gefunden: $file in $folderPath");
                     
-                    // Rekursiver Aufruf für das Unteralbum
-                    importImagesFromFolder($subAlbumId, $sourcePath, $subAlbumPath, $db, $userId, $scanSubFolders);
-                } else {
-                    // Unteralbum existiert bereits, verwende dessen ID für den rekursiven Aufruf
-                    // Stelle sicher, dass das Unteralbum das richtige Elternalbum hat
-                    $db->execute('UPDATE albums SET parent_album_id = :parent_id WHERE id = :id', [
-                        'parent_id' => $albumId,
-                        'id' => $subAlbum['id']
+                    // Erstelle ein Unteralbum
+                    $subAlbumPath = $albumPath . '/' . $file;
+                    
+                    // Prüfe, ob dieses Unteralbum bereits existiert
+                    $subAlbum = $db->fetchOne('SELECT * FROM albums WHERE path = :path AND deleted_at IS NULL', [
+                        'path' => $subAlbumPath
                     ]);
                     
-                    importImagesFromFolder($subAlbum['id'], $sourcePath, $subAlbumPath, $db, $userId, $scanSubFolders);
-                }
-            }
-            // Wenn es eine Datei ist, prüfe ob es ein Bild oder Video ist
-            else {
-                $fileExtension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-                if (in_array($fileExtension, SUPPORTED_MEDIA_TYPES)) {
-                    // Den Originalpfad des Mediums beibehalten, nicht kopieren
-                    $relativeSourcePath = str_replace(USER_STORAGE_PATH . '/', '', $sourcePath);
-                    
-                    // Bestimme den Medientyp (Bild oder Video)
-                    $mediaType = in_array($fileExtension, SUPPORTED_IMAGE_TYPES) ? 'image' : 'video';
-                    
-                    // MIME-Typ ermitteln und speichern
-                    $mimeType = getMimeTypeForExtension($fileExtension);
-                    
-                    // Stelle sicher, dass die Zielverzeichnisse für Thumbnails existieren
-                    if (!is_dir(THUMBS_PATH)) {
-                        mkdir(THUMBS_PATH, 0755, true);
-                    }
-                    
-                    // Erstelle Thumbnail mit korrekter Verzeichnisstruktur
-                    $thumbDir = THUMBS_PATH . '/' . $albumPath;
-                    if (!is_dir($thumbDir)) {
-                        mkdir($thumbDir, 0755, true);
-                    }
-                    
-                    // Generiere einen eindeutigen Thumbnail-Namen basierend auf dem Original
-                    $thumbFilename = basename($sourcePath);
-                    $thumbPath = $thumbDir . '/' . $thumbFilename;
-                    
-                    // Thumbnail erstellen basierend auf Medientyp
-                    if ($mediaType === 'image') {
-                        // Bild-Thumbnail erstellen
-                        Imaging::createThumbnail($sourcePath, $thumbPath);
+                    // Wenn das Unteralbum noch nicht existiert, erstelle es
+                    if (!$subAlbum) {
+                        logMonitor("Erstelle neues Unteralbum für: $file");
                         
-                        // Drehe das Thumbnail wenn nötig
-                        if (function_exists('exif_read_data')) {
-                            Imaging::autoRotateImage($thumbPath);
-                        }
-                    } else if ($mediaType === 'video') {
-                        // Prüfen, ob FFmpeg verfügbar ist
-                        $ffmpegAvailable = Imaging::isFFmpegAvailable();
+                        // Statt direkt einzufügen, createAlbum verwenden, um Duplikate zu vermeiden
+                        // Wichtig: Hier übergeben wir die albumId als parentAlbumId
+                        $subAlbumId = createAlbum($userId, $subAlbumPath, $file, $db, $albumId);
                         
-                        if ($ffmpegAvailable) {
-                            // FFmpeg verfügbar - erstelle Thumbnail aus Video (Frame bei 10 Sekunden)
-                            $success = Imaging::createVideoThumbnail($sourcePath, $thumbPath, THUMB_WIDTH, THUMB_HEIGHT, 10);
+                        if ($subAlbumId) {
+                            logMonitor("Neues Unteralbum erstellt: ID $subAlbumId für $file");
+                            $subFolderCount++;
                             
-                            if (!$success) {
-                                error_log("Konnte Video-Thumbnail nicht erstellen für: $thumbFilename");
-                                // Fallback: Standard-Video-Thumbnail
-                                copy(__DIR__ . "/../../public/img/video-thumbnail.jpg", $thumbPath);
-                            }
+                            // Rekursiver Aufruf für das Unteralbum
+                            list($subImported, $subFolders) = importImagesFromFolder(
+                                $subAlbumId, 
+                                $sourcePath, 
+                                $subAlbumPath, 
+                                $db, 
+                                $userId, 
+                                $scanSubFolders
+                            );
+                            
+                            $importCount += $subImported;
+                            $subFolderCount += $subFolders;
                         } else {
-                            // FFmpeg nicht verfügbar - Standard-Thumbnail verwenden
-                            if (file_exists(__DIR__ . "/../../public/img/video-thumbnail.jpg")) {
-                                copy(__DIR__ . "/../../public/img/video-thumbnail.jpg", $thumbPath);
-                            } else {
-                                error_log("Standard-Video-Thumbnail nicht gefunden und FFmpeg nicht installiert.");
-                                // Erstelle einfaches Text-Thumbnail
-                                $img = imagecreatetruecolor(320, 240);
-                                $textcolor = imagecolorallocate($img, 255, 255, 255);
-                                $bg = imagecolorallocate($img, 0, 0, 0);
-                                imagefilledrectangle($img, 0, 0, 320, 240, $bg);
-                                imagestring($img, 5, 110, 100, 'VIDEO', $textcolor);
-                                imagestring($img, 3, 60, 120, 'FFmpeg not installed', $textcolor);
-                                imagejpeg($img, $thumbPath, 90);
-                                imagedestroy($img);
-                            }
+                            logMonitor("Fehler: Konnte Unteralbum nicht erstellen für: $file");
                         }
+                    } else {
+                        logMonitor("Unteralbum existiert bereits: ID {$subAlbum['id']} für $file");
+                        
+                        // Unteralbum existiert bereits, verwende dessen ID für den rekursiven Aufruf
+                        // Stelle sicher, dass das Unteralbum das richtige Elternalbum hat
+                        $db->execute('UPDATE albums SET parent_album_id = :parent_id WHERE id = :id', [
+                            'parent_id' => $albumId,
+                            'id' => $subAlbum['id']
+                        ]);
+                        
+                        list($subImported, $subFolders) = importImagesFromFolder(
+                            $subAlbum['id'], 
+                            $sourcePath, 
+                            $subAlbumPath, 
+                            $db, 
+                            $userId, 
+                            $scanSubFolders
+                        );
+                        
+                        $importCount += $subImported;
+                        $subFolderCount += $subFolders;
                     }
-                    
-                    // Überprüfe ob das Thumbnail erstellt wurde
-                    if (!file_exists($thumbPath)) {
-                        error_log("Thumbnail konnte nicht erstellt werden: " . $thumbPath);
-                    }
-                    // Für Videos könnten wir später ein Standbild als Thumbnail erstellen
-                    // Aber für den Moment fügen wir sie einfach ohne Thumbnail hinzu
-                    
-                    // Speichere den relativen Pfad zur Originaldatei in der Datenbank
-                    $imageData = [
-                        'filename' => $relativeSourcePath,
-                        'album_id' => $albumId,
-                        'media_type' => $mediaType,
-                        'is_public' => 0,
-                        'upload_date' => date('Y-m-d H:i:s')
-                    ];
-                    
-                    // Prüfen, ob die mime_type-Spalte existiert
-                    try {
-                        static $hasColumn = null;
-                        if ($hasColumn === null) {
-                            $hasColumn = false;
-                            $columns = $db->fetchAll("PRAGMA table_info(images)");
-                            foreach ($columns as $column) {
-                                if ($column['name'] === 'mime_type') {
-                                    $hasColumn = true;
-                                    break;
+                }
+                // Wenn es eine Datei ist, prüfe ob es ein Bild oder Video ist
+                else {
+                    $fileExtension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                    if (in_array($fileExtension, SUPPORTED_MEDIA_TYPES)) {
+                        // Den Originalpfad des Mediums beibehalten, nicht kopieren
+                        $relativeSourcePath = str_replace(USER_STORAGE_PATH . '/', '', $sourcePath);
+                        
+                        // Bestimme den Medientyp (Bild oder Video)
+                        $mediaType = in_array($fileExtension, SUPPORTED_IMAGE_TYPES) ? 'image' : 'video';
+                        
+                        // MIME-Typ ermitteln und speichern
+                        $mimeType = getMimeTypeForExtension($fileExtension);
+                        
+                        logMonitor("Mediendatei gefunden: $file, Typ: $mediaType, MIME: $mimeType");
+                        
+                        // Stelle sicher, dass die Zielverzeichnisse für Thumbnails existieren
+                        if (!is_dir(THUMBS_PATH)) {
+                            mkdir(THUMBS_PATH, 0755, true);
+                        }
+                        
+                        // Erstelle Thumbnail mit korrekter Verzeichnisstruktur
+                        $thumbDir = THUMBS_PATH . '/' . $albumPath;
+                        if (!is_dir($thumbDir)) {
+                            mkdir($thumbDir, 0755, true);
+                        }
+                        
+                        // Generiere einen eindeutigen Thumbnail-Namen basierend auf dem Original
+                        $thumbFilename = basename($sourcePath);
+                        $thumbPath = $thumbDir . '/' . $thumbFilename;
+                        
+                        // Thumbnail erstellen basierend auf Medientyp
+                        if ($mediaType === 'image') {
+                            // Bild-Thumbnail erstellen
+                            Imaging::createThumbnail($sourcePath, $thumbPath);
+                            
+                            // Drehe das Thumbnail wenn nötig
+                            if (function_exists('exif_read_data')) {
+                                Imaging::autoRotateImage($thumbPath);
+                            }
+                        } else if ($mediaType === 'video') {
+                            // Prüfen, ob FFmpeg verfügbar ist
+                            $ffmpegAvailable = Imaging::isFFmpegAvailable();
+                            
+                            if ($ffmpegAvailable) {
+                                // FFmpeg verfügbar - erstelle Thumbnail aus Video (Frame bei 10 Sekunden)
+                                $success = Imaging::createVideoThumbnail($sourcePath, $thumbPath, THUMB_WIDTH, THUMB_HEIGHT, 10);
+                                
+                                if (!$success) {
+                                    logMonitor("Konnte Video-Thumbnail nicht erstellen für: $thumbFilename");
+                                    // Fallback: Standard-Video-Thumbnail
+                                    copy(__DIR__ . "/../../public/img/video-thumbnail.jpg", $thumbPath);
+                                }
+                            } else {
+                                // FFmpeg nicht verfügbar - Standard-Thumbnail verwenden
+                                if (file_exists(__DIR__ . "/../../public/img/video-thumbnail.jpg")) {
+                                    copy(__DIR__ . "/../../public/img/video-thumbnail.jpg", $thumbPath);
+                                } else {
+                                    logMonitor("Standard-Video-Thumbnail nicht gefunden und FFmpeg nicht installiert.");
+                                    // Erstelle einfaches Text-Thumbnail
+                                    $img = imagecreatetruecolor(320, 240);
+                                    $textcolor = imagecolorallocate($img, 255, 255, 255);
+                                    $bg = imagecolorallocate($img, 0, 0, 0);
+                                    imagefilledrectangle($img, 0, 0, 320, 240, $bg);
+                                    imagestring($img, 5, 110, 100, 'VIDEO', $textcolor);
+                                    imagestring($img, 3, 60, 120, 'FFmpeg not installed', $textcolor);
+                                    imagejpeg($img, $thumbPath, 90);
+                                    imagedestroy($img);
                                 }
                             }
                         }
                         
-                        // MIME-Type nur hinzufügen, wenn die Spalte existiert
-                        if ($hasColumn && isset($mimeType)) {
-                            $imageData['mime_type'] = $mimeType;
+                        // Überprüfe ob das Thumbnail erstellt wurde
+                        if (!file_exists($thumbPath)) {
+                            logMonitor("Thumbnail konnte nicht erstellt werden: " . $thumbPath);
                         }
-                    } catch (Exception $e) {
-                        // Bei Fehler einfach ohne mime_type fortfahren
-                        error_log("Fehler beim Prüfen der mime_type-Spalte: " . $e->getMessage());
-                    }
-                    
-                    $imageId = $db->insert('images', $imageData);
-                    
-                    // Debug-Log für Video-Dateien
-                    if ($mediaType === 'video') {
-                        error_log("Video hinzugefügt: $relativeSourcePath, MIME-Typ: $mimeType");
+                        
+                        // Speichere den relativen Pfad zur Originaldatei in der Datenbank
+                        $imageData = [
+                            'filename' => $relativeSourcePath,
+                            'album_id' => $albumId,
+                            'media_type' => $mediaType,
+                            'is_public' => 0,
+                            'upload_date' => date('Y-m-d H:i:s')
+                        ];
+                        
+                        // Prüfen, ob die mime_type-Spalte existiert
+                        try {
+                            static $hasColumn = null;
+                            if ($hasColumn === null) {
+                                $hasColumn = false;
+                                $columns = $db->fetchAll("PRAGMA table_info(images)");
+                                foreach ($columns as $column) {
+                                    if ($column['name'] === 'mime_type') {
+                                        $hasColumn = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            // MIME-Type nur hinzufügen, wenn die Spalte existiert
+                            if ($hasColumn && isset($mimeType)) {
+                                $imageData['mime_type'] = $mimeType;
+                            }
+                        } catch (Exception $e) {
+                            // Bei Fehler einfach ohne mime_type fortfahren
+                            logMonitor("Fehler beim Prüfen der mime_type-Spalte: " . $e->getMessage());
+                        }
+                        
+                        $imageId = $db->insert('images', $imageData);
+                        
+                        if ($imageId) {
+                            logMonitor("Neue Mediendatei importiert: $file (ID: $imageId)");
+                            $importCount++;
+                        } else {
+                            logMonitor("Fehler beim Import von: $file");
+                        }
                     }
                 }
             }
+        } catch (Exception $e) {
+            logMonitor("Fehler bei der Verarbeitung des Ordners: " . $e->getMessage());
         }
+        
+        logMonitor("Ordner abgeschlossen: $folderPath - $importCount Dateien, $subFolderCount Unterordner");
+        return [$importCount, $subFolderCount];
     }
 
     $users = $db->fetchAll('SELECT id FROM users WHERE deleted_at IS NULL');
@@ -253,12 +324,26 @@ function monitorUserFolders($db) {
                 if (!albumExists($userId, $fullPath, $db)) {
                     // Als Album-Namen nur den Ordnernamen ohne user_X/ verwenden
                     $albumId = createAlbum($userId, $fullPath, $folder, $db);
-                    importImagesFromFolder($albumId, $folderPath, $fullPath, $db, $userId, true);
+                    logMonitor("Album '$folder' für Benutzer $userId erstellt");
+                    list($importedCount, $subFolderCount) = importImagesFromFolder($albumId, $folderPath, $fullPath, $db, $userId, true);
+                    logMonitor("Import abgeschlossen: Album '$folder' für Benutzer $userId - $importedCount Dateien, $subFolderCount Unterordner");
+                } else {
+                    // Album existiert bereits - trotzdem nach neuen Dateien scannen
+                    $album = $db->fetchOne('SELECT id FROM albums WHERE user_id = :user_id AND path = :path AND deleted_at IS NULL', [
+                        'user_id' => $userId,
+                        'path' => $fullPath
+                    ]);
+                    
+                    if ($album) {
+                        logMonitor("Bestehendes Album '$folder' für Benutzer $userId wird auf neue Dateien geprüft");
+                        list($importedCount, $subFolderCount) = importImagesFromFolder($album['id'], $folderPath, $fullPath, $db, $userId, true);
+                        logMonitor("Scan abgeschlossen: Album '$folder' für Benutzer $userId - $importedCount neue Dateien, $subFolderCount neue Unterordner");
+                    }
                 }
             }
         }
     }
-}
+} // Ende der monitorUserFolders-Funktion
 
 monitorUserFolders($db);
 

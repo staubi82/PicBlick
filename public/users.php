@@ -62,66 +62,72 @@ foreach ($users as &$user) {
     <style>
         .user-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
             gap: 20px;
             margin-top: 20px;
         }
         
         .user-card {
             background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            transition: transform 0.2s, box-shadow 0.2s;
+            border-radius: 10px;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s;
             overflow: hidden;
+            position: relative;
+            height: 220px;
         }
         
         .user-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
         }
         
         .user-card a {
-            display: flex;
-            flex-direction: column;
+            display: block;
             height: 100%;
             text-decoration: none;
             color: inherit;
         }
         
         .user-avatar {
-            display: flex;
-            justify-content: center;
-            padding: 20px 0;
-            background-color: #f5f5f5;
+            position: relative;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
         }
         
         .user-avatar img {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
+            width: 100%;
+            height: 100%;
             object-fit: cover;
-            border: 4px solid #fff;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: transform 0.5s ease;
         }
         
-        .user-info {
-            padding: 20px;
-            text-align: center;
+        .user-card:hover .user-avatar img {
+            transform: scale(1.1);
         }
         
-        .user-info h3 {
-            margin: 0 0 10px 0;
-            font-size: 1.2rem;
-            color: var(--primary-text);
+        .user-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.5) 60%, rgba(0,0,0,0) 100%);
+            color: white;
+            padding: 20px 15px 15px;
+            transition: opacity 0.3s;
         }
         
-        .user-stats {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-top: 10px;
+        .user-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+        }
+        
+        .user-count {
             font-size: 0.9rem;
-            color: var(--secondary-text);
+            opacity: 0.9;
         }
         
         .empty-state {
@@ -193,14 +199,14 @@ foreach ($users as &$user) {
                             <div class="user-card">
                                 <a href="/public/user-profile.php?id=<?php echo $user['id']; ?>">
                                     <div class="user-avatar">
-                                        <img src="<?php echo htmlspecialchars($user['profile_image_url']); ?>" 
-                                             alt="<?php echo htmlspecialchars($user['username']); ?>">
-                                    </div>
-                                    <div class="user-info">
-                                        <h3><?php echo htmlspecialchars($user['username']); ?></h3>
-                                        <div class="user-stats">
-                                            <span><?php echo $user['album_count']; ?> Alben</span>
-                                            <span><?php echo $user['image_count']; ?> Bilder</span>
+                                        <img src="<?php echo htmlspecialchars($user['profile_image_url']); ?>"
+                                             alt="<?php echo htmlspecialchars($user['username']); ?>"
+                                             onerror="this.onerror=null;this.src='/public/img/default-profile.jpg';">
+                                        <div class="user-overlay">
+                                            <div class="user-title"><?php echo htmlspecialchars($user['username']); ?></div>
+                                            <div class="user-count">
+                                                <?php echo $user['album_count']; ?> Alben | <?php echo $user['image_count']; ?> Medien
+                                            </div>
                                         </div>
                                     </div>
                                 </a>

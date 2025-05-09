@@ -209,11 +209,65 @@ $owner = $db->fetchOne(
                                     <?php endif; ?>
                                     <?php echo htmlspecialchars($album['name']); ?>
                                     <?php if ($album['is_public']): ?>
-                                        <span class="public-badge">Öffentlich</span>
+                                        <span class="public-badge globe-icon">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="globe">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                                            </svg>
+                                        </span>
                                     <?php endif; ?>
                                 </h2>
                                 <p id="album-description" data-editable="false"><?php echo htmlspecialchars($album['description'] ?? 'Keine Beschreibung'); ?></p>
-                                <p class="created-info">Erstellt von <strong><?php echo htmlspecialchars($owner['username']); ?></strong> am <?php echo isset($album['created_at']) ? date('d.m.Y', strtotime($album['created_at'])) : '01.01.2003'; ?></p>
+                                <p class="created-info">
+                                    Erstellt von <strong><?php echo htmlspecialchars($owner['username']); ?></strong> am <?php echo isset($album['created_at']) ? date('d.m.Y', strtotime($album['created_at'])) : '01.01.2003'; ?>
+                                    <?php
+                                    // Funktion zum Sammeln aller Unteralben-IDs
+                                    function getAllSubalbumIds($db, $albumId) {
+                                        $allIds = [$albumId];
+                                        
+                                        // Prüfen, ob die parent_album_id-Spalte existiert
+                                        $hasParentColumn = false;
+                                        $columns = $db->fetchAll("PRAGMA table_info(albums)", []);
+                                        foreach ($columns as $col) {
+                                            if ($col['name'] === 'parent_album_id') {
+                                                $hasParentColumn = true;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if ($hasParentColumn) {
+                                            $subAlbums = $db->fetchAll(
+                                                "SELECT id FROM albums WHERE parent_album_id = :album_id AND deleted_at IS NULL",
+                                                ['album_id' => $albumId]
+                                            );
+                                            
+                                            foreach ($subAlbums as $subAlbum) {
+                                                $subIds = getAllSubalbumIds($db, $subAlbum['id']);
+                                                $allIds = array_merge($allIds, $subIds);
+                                            }
+                                        }
+                                        
+                                        return $allIds;
+                                    }
+                                    
+                                    // Alle Unteralben-IDs sammeln
+                                    $allAlbumIds = getAllSubalbumIds($db, $albumId);
+                                    $albumIdsString = implode(',', $allAlbumIds);
+                                    
+                                    // Falls keine Unteralben gefunden wurden (sollte nicht passieren)
+                                    if (empty($albumIdsString)) {
+                                        $albumIdsString = $albumId;
+                                    }
+                                    
+                                    // Gesamtzahl aller Medien in diesem Album und allen Unteralben
+                                    $totalMediaCount = $db->fetchValue(
+                                        "SELECT COUNT(*) FROM images WHERE album_id IN ($albumIdsString) AND deleted_at IS NULL"
+                                    );
+                                    
+                                    echo "<br>Enthält <strong>" . $totalMediaCount . "</strong> (inkl. Unteralben)";
+                                    ?>
+                                </p>
                                 <!-- Versteckte Input-Felder für die ursprünglichen Werte -->
                                 <input type="hidden" id="original-album-title" value="<?php echo htmlspecialchars($album['name']); ?>">
                                 <input type="hidden" id="original-album-description" value="<?php echo htmlspecialchars($album['description'] ?? ''); ?>">
@@ -737,6 +791,51 @@ $owner = $db->fetchOne(
     opacity: 1;
     transform: scale(1.1);
     background-color: rgba(0, 0, 0, 0.8);
+}
+
+/* Styling für das Weltkugel-Icon */
+.globe-icon {
+    position: relative;
+    display: inline-flex;
+    margin-left: 10px;
+    vertical-align: text-top;
+    background: linear-gradient(135deg, rgba(0, 120, 50, 0.8), rgba(0, 150, 70, 0.9));
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    margin-top: -2px;
+}
+
+.globe {
+    color: white;
+    stroke-width: 1.5;
+}
+
+/* Spezielle Positionierung nur in der Album-Grid-Ansicht (index.php) */
+.album-thumbnail .globe-icon {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    margin-left: 0;
+    width: 24px;
+    height: 24px;
+}
+
+.globe {
+    color: white;
+}
+
+@media (max-width: 768px) {
+    .globe-icon {
+        width: 20px;
+        height: 20px;
+        padding: 3px;
+    }
 }
 </style>
 
